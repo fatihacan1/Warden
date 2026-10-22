@@ -35,9 +35,30 @@
 {{end}}
 
 {{$vals := .Values}}
+<div class="onboard-bar" id="onboard-bar" hidden>
+  <div class="onboard-progress"><span id="onboard-fill"></span></div>
+  <p class="onboard-count" id="onboard-count"></p>
+</div>
+
 <form method="post" action="/review" class="stack" id="setup-form" autocomplete="off">
+  <section class="panel onboard-welcome" data-step="Welcome" {{if .Errors}}data-skip{{end}}>
+    <div class="panel-body">
+      <img src="/static/mark.svg" alt="" width="48" height="48">
+      <h2>Let's set up Warden</h2>
+      <p>A few short steps, about three minutes. Each connection is tested before you move on, and nothing is written until you confirm the final file.</p>
+      <ol class="onboard-list">
+        <li><strong>Where it runs</strong>: public URL and app name</li>
+        <li><strong>Connections</strong>: PostgreSQL, Redis, email, photo storage, events</li>
+        <li><strong>Security</strong>: encryption, admin token, which APIs are on</li>
+        <li><strong>Your apps</strong>: web origins and redirect URIs</li>
+      </ol>
+      <p class="help mb-0">{{if .Existing}}Your current values are filled in; the old file is backed up when you save.{{else}}Defaults match the local Docker Compose stack, so for local development you can mostly press Continue.{{end}}</p>
+    </div>
+    <footer class="onboard-nav" hidden><span></span><button type="button" class="btn btn-primary" data-next>Get started</button></footer>
+  </section>
+
   {{range .Sections}}
-  <section class="panel" id="{{.ID}}">
+  <section class="panel" id="{{.ID}}" data-step="{{.Title}}"{{if .Check}} data-check="{{.Check}}"{{end}}{{if or (eq .ID "database") (eq .ID "redis")}} data-required{{end}}>
     <header>
       <div><h2>{{.Title}}</h2><p class="help mb-0">{{.Lede}}</p></div>
       {{if .Check}}<div class="row"><span class="check-result" data-result="{{.Check}}" role="status"></span><button type="button" class="btn btn-small" data-check="{{.Check}}">Test connection</button></div>{{end}}
@@ -71,10 +92,17 @@
       {{end}}
       {{end}}
     </div>
+    <footer class="onboard-nav" hidden>
+      <button type="button" class="btn" data-back>Back</button>
+      <div class="row">
+        {{if .Check}}<button type="button" class="link" data-skip-test>Skip the test</button>{{end}}
+        <button type="button" class="btn btn-primary" data-next>Continue</button>
+      </div>
+    </footer>
   </section>
   {{end}}
 
-  <div class="row">
+  <div class="row onboard-submit">
     <button class="btn btn-primary" type="submit">Review .env</button>
     <span class="help">Nothing is written until you confirm on the next page.</span>
   </div>

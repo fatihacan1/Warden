@@ -155,3 +155,17 @@ func TestQuoteRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// Browsers turn Origin into "null" on form posts under Referrer-Policy:
+// no-referrer, which would make every form submission fail the origin check.
+func TestFormPostsKeepTheirOrigin(t *testing.T) {
+	s := newTestServer(t, filepath.Join(t.TempDir(), ".env"))
+	rec := do(t, s.routes(), "GET", "/", nil, map[string]string{"Cookie": cookieName + "=tok-123"})
+	if p := rec.Header().Get("Referrer-Policy"); p == "no-referrer" || p == "" {
+		t.Fatalf("Referrer-Policy %q breaks same-origin form posts", p)
+	}
+	hdr := map[string]string{"Cookie": cookieName + "=tok-123", "Origin": "http://127.0.0.1:9095"}
+	if rec := do(t, s.routes(), "POST", "/generate/token", url.Values{}, hdr); rec.Code != 200 {
+		t.Fatalf("same-origin post: %d", rec.Code)
+	}
+}

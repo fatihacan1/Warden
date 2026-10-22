@@ -152,7 +152,9 @@ func (s *server) guard(next http.Handler) http.Handler {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
-		h.Set("Referrer-Policy", "no-referrer")
+		// same-origin, not no-referrer: with no-referrer browsers send
+		// "Origin: null" on form posts, which the origin check rejects.
+		h.Set("Referrer-Policy", "same-origin")
 		h.Set("Cache-Control", "no-store")
 		h.Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 
@@ -187,6 +189,9 @@ func (s *server) guard(next http.Handler) http.Handler {
 		if r.Method == http.MethodPost {
 			if o := r.Header.Get("Origin"); o != "" {
 				if u, err := url.Parse(o); err != nil || u.Host != r.Host {
+					if s.opt.Log != nil {
+						s.opt.Log.Warn("setup: cross-origin post rejected", "origin", o, "host", r.Host)
+					}
 					http.Error(w, "Cross-origin request rejected.", http.StatusForbidden)
 					return
 				}

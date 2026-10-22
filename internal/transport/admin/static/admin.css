@@ -43,6 +43,7 @@
   }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
 body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.55 var(--sans); }
 a { color: var(--ink); text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
@@ -346,3 +347,20 @@ input[type=email] { width: 100%; font: inherit; color: var(--ink); background: v
 .pager-current { border-color: var(--accent); color: var(--accent); }
 
 .flag { display: inline-block; vertical-align: -1px; border-radius: 2px; box-shadow: 0 0 0 1px var(--line); }
+
+/* Setup onboarding flow */
+.onboard-bar { max-width: 680px; margin-left: auto !important; margin-right: auto !important; position: sticky; top: 0; z-index: 2; background: var(--paper); padding: 12px 0 8px; margin-bottom: 8px; }
+.onboard-progress { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.onboard-progress span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s ease; }
+.onboard-count { margin: 8px 0 0; min-height: 20px; color: var(--ink-3); font-size: 13px; }
+.onboarding .setup-page .head { display: none; }
+.onboarding [data-step] { max-width: 680px; margin-left: auto; margin-right: auto; }
+.onboard-welcome .panel-body { padding: 32px; }
+.onboard-welcome h2 { font-size: 24px; margin: 16px 0 8px; }
+.onboard-list { padding-left: 20px; margin: 16px 0; }
+.onboard-list li { margin-bottom: 6px; }
+.onboard-nav { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px; border-top: 1px solid var(--line); }
+.onboard-nav .link { color: var(--ink-3); text-decoration: underline; text-underline-offset: 3px; font-size: 13px; }
+.onboarding [data-step] > header .row .btn { display: none; }
+.onboarding .check-result:not(:empty) { display: block; }
+@media (prefers-reduced-motion: reduce) { .onboard-progress span { transition: none; } }
