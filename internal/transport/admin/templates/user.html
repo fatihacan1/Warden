@@ -70,6 +70,7 @@
         <dl class="kv">
           <dt>ID</dt><dd class="mono">{{$u.ID}}</dd>
           <dt>Name</dt><dd>{{if $u.Name}}{{$u.Name}}{{else}}<span class="muted">-</span>{{end}}</dd>
+          <dt>Roles</dt><dd>{{range $u.Roles}}<span class="tag tag-accent">{{.}}</span> {{else}}<span class="muted">No roles assigned</span>{{end}}</dd>
           <dt>Password</dt><dd>{{if $u.HasPassword}}Set{{else}}None (social only){{end}}</dd>
           <dt>Recovery codes</dt><dd class="num">{{if $u.MFAEnabled}}{{.RecoveryCodes}} unused{{else}}-{{end}}</dd>
           <dt>Created</dt><dd class="num">{{date $u.CreatedAt}}</dd>
