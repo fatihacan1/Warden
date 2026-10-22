@@ -83,8 +83,13 @@ type Definition struct {
 	DocsURL        string
 	ConsoleURL     string
 	SupportsNative bool
-	Fields         []Field
-	New            func(s Settings, d Deps) (Provider, error)
+	// AllowsLocalhost reports whether the provider accepts http://localhost
+	// callback URLs, so it can be tested on a developer machine.
+	AllowsLocalhost bool
+	// CallbackField names the console setting where the callback URL goes.
+	CallbackField string
+	Fields        []Field
+	New           func(s Settings, d Deps) (Provider, error)
 }
 
 // Common setting keys.

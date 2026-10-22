@@ -199,3 +199,13 @@ ol.steps li { margin-bottom: 6px; }
 .toggle-row h3 { margin: 0 0 2px; }
 .toggle-row .help { margin: 0; }
 .toggle-row .switch { margin-top: 2px; }
+
+/* Provider brand marks (Simple Icons, CC0) */
+.pv-icon { width: 22px; height: 22px; flex: none; color: var(--ink); }
+.pv-google { color: #4285f4; }
+.pv-discord { color: #5865f2; }
+.callout { margin-bottom: 20px; background: var(--sunk); }
+.callout h2 { margin-bottom: 8px; }
+.callout p { max-width: none; }
+.mb-0 { margin-bottom: 0; }
+.callback-help { margin: -8px 0 16px; }

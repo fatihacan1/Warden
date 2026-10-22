@@ -17,6 +17,38 @@
 
 Warden validates most of this at startup and refuses to run with insecure settings.
 
+## Domain and HTTPS
+
+Locally Warden runs on `http://localhost:8080`; that is what the callback URLs in the admin UI show. To go live:
+
+1. **Pick a subdomain** for the auth service, for example `auth.yourapp.com`, and create a DNS `A` (and `AAAA`) record pointing at your server or load balancer.
+2. **Terminate TLS in front of Warden.** The simplest option is [Caddy](https://caddyserver.com), which gets certificates automatically. A ready config is in [deploy/caddy/Caddyfile](../deploy/caddy/Caddyfile); replace the domain and run Caddy next to Warden on ports 80 and 443. Behind a cloud load balancer (AWS ALB, Cloudflare, Fly, Railway) use its TLS instead.
+3. **Tell Warden its public address** in the environment and restart:
+
+   ```env
+   APP_ENV=production
+   HTTP_PUBLIC_URL=https://auth.yourapp.com
+   HTTP_TRUSTED_PROXIES=172.16.0.0/12   # the address range of Caddy or your load balancer
+   HTTP_COOKIE_SECURE=true
+   ```
+
+   `HTTP_PUBLIC_URL` becomes the token issuer (`iss`), the JWKS address and the base of every OAuth callback URL. It is deliberately not editable in the admin UI: changing it invalidates every issued token.
+4. **Register the new callback URLs.** Open the admin UI > Sign-in providers; each card now shows `https://auth.yourapp.com/v1/oauth/<provider>/callback`. Add it in each provider's console. Apple works only from this point, since it rejects localhost.
+5. **Update your apps**: the issuer and JWKS URL in your backends, and the production redirect URIs and CORS origins in admin UI > Settings.
+
+### Local and production side by side
+
+Run two instances, each with its own `.env` and database: one on your machine (`APP_ENV=development`, localhost URL) and one on the server (`APP_ENV=production`, your domain). `APP_ENV` is what marks an instance as local or live; in production Warden refuses insecure settings such as plain HTTP.
+
+Providers handle the two environments differently:
+
+| Provider | Localhost callbacks | Recommendation |
+| --- | --- | --- |
+| Google | Allowed | One OAuth client can list both callback URLs |
+| Discord | Allowed | One application can list both redirects |
+| GitHub | Allowed | An OAuth App has a single callback URL: create one app for local, one for production |
+| Apple | Not allowed (HTTPS only) | Test on a deployed instance, or through an HTTPS tunnel such as `cloudflared tunnel` with `HTTP_PUBLIC_URL` set to the tunnel URL |
+
 ## Deployment shape
 
 ```

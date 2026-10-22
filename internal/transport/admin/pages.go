@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"errors"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -76,8 +77,15 @@ func (s *Server) overview(c fiber.Ctx) error {
 // Providers
 
 func (s *Server) providersPage(c fiber.Ctx) error {
+	pub := s.Config.HTTP.PublicURL
+	local := false
+	if u, err := url.Parse(pub); err == nil {
+		h := u.Hostname()
+		local = h == "localhost" || h == "127.0.0.1" || h == "::1" || strings.HasSuffix(h, ".localhost")
+	}
 	return s.render(c, fiber.StatusOK, "providers", "providers", "Sign-in providers", map[string]any{
 		"Providers": s.OAuth.Statuses(), "Redirects": s.Settings.Get().AllowedRedirectURIs,
+		"PublicURL": pub, "Local": local, "HTTPS": strings.HasPrefix(pub, "https://"),
 	})
 }
 

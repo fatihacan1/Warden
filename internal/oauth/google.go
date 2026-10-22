@@ -11,11 +11,13 @@ import (
 
 func googleDefinition() *Definition {
 	return &Definition{
-		Name:           "google",
-		DisplayName:    "Google",
-		DocsURL:        "https://developers.google.com/identity/protocols/oauth2/web-server",
-		ConsoleURL:     "https://console.cloud.google.com/apis/credentials",
-		SupportsNative: true,
+		Name:            "google",
+		DisplayName:     "Google",
+		DocsURL:         "https://developers.google.com/identity/protocols/oauth2/web-server",
+		ConsoleURL:      "https://console.cloud.google.com/apis/credentials",
+		SupportsNative:  true,
+		AllowsLocalhost: true,
+		CallbackField:   "Credentials > OAuth client > Authorized redirect URIs",
 		Fields: []Field{
 			{Key: KeyClientID, Label: "Web client ID", Required: true, Help: "OAuth client of type \"Web application\". Add the callback URL above as an authorized redirect URI."},
 			{Key: KeyClientSecret, Label: "Web client secret", Secret: true, Required: true},

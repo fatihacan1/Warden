@@ -6,16 +6,33 @@
   </div>
 </div>
 
+<section class="panel callout">
+  <div class="panel-body">
+    <h2>Where providers send users back</h2>
+    <p>Every callback URL below is built from <code>HTTP_PUBLIC_URL</code>, currently <code>{{.PublicURL}}</code>. It is set in the environment, not here, because it is also the issuer of every access token.</p>
+    {{if .Local}}
+    <p><span class="tag tag-warn">Local testing</span> This instance runs on your machine. Google, GitHub and Discord accept <code>localhost</code> callbacks, so you can test them now. Apple only accepts HTTPS on a real domain.</p>
+    <p class="mb-0"><strong>Going live:</strong> point a domain such as <code>auth.yourapp.com</code> at your server, set <code>HTTP_PUBLIC_URL=https://auth.yourapp.com</code> and <code>APP_ENV=production</code>, restart, then register the new callback URLs shown here with each provider. Most teams keep a separate OAuth app per provider for local and production. See <a href="https://github.com/fatihacan1/warden/blob/main/docs/production.md#domain-and-https" target="_blank" rel="noopener noreferrer">domain setup</a>.</p>
+    {{else if not .HTTPS}}
+    <p class="mb-0"><span class="tag tag-err">No HTTPS</span> Providers require HTTPS callbacks outside localhost. Put Warden behind a TLS proxy and use an <code>https://</code> public URL.</p>
+    {{else}}
+    <p class="mb-0"><span class="tag tag-ok">Live domain</span> Register the callback URLs below with each provider exactly as shown.</p>
+    {{end}}
+  </div>
+</section>
+
 {{if not .Redirects}}
 <p class="notice notice-err">No app redirect URIs are allowed yet. Set <code>AUTH_ALLOWED_REDIRECT_URIS</code> (for example <code>https://app.example.com/auth/callback,myapp://auth</code>) or social sign-in cannot return to your apps.</p>
 {{end}}
 
+{{$local := .Local}}
 {{range .Providers}}
 <section class="panel provider" id="{{.Def.Name}}">
   <form method="post" action="/admin/providers/{{.Def.Name}}">
     <input type="hidden" name="_csrf" value="{{$csrf}}">
     <header>
       <div class="row">
+        {{providerIcon .Def.Name}}
         <h2>{{.Def.DisplayName}}</h2>
         {{if .Active}}<span class="tag tag-ok">Active</span>{{else if .Error}}<span class="tag tag-err">Misconfigured</span>{{else}}<span class="tag">Off</span>{{end}}
         <span class="tag" title="Where the current settings come from">{{if eq (print .Source) "admin"}}Set here{{else if eq (print .Source) "env"}}From environment{{else}}Not configured{{end}}</span>
@@ -27,6 +44,8 @@
       {{if .Error}}<p class="notice notice-err">{{.Error}}</p>{{end}}
       <label>Callback URL to register with {{.Def.DisplayName}}</label>
       <div class="copy"><code>{{.CallbackURL}}</code><button type="button" class="btn btn-small" data-copy="{{.CallbackURL}}">Copy</button></div>
+      <p class="help callback-help">{{if .Def.CallbackField}}Paste it into <strong>{{.Def.CallbackField}}</strong>.{{end}}
+        {{if and $local (not .Def.AllowsLocalhost)}}<span class="tag tag-warn">Needs a real HTTPS domain</span> {{.Def.DisplayName}} rejects localhost callbacks; set it up after deploying.{{end}}</p>
       <div class="provider-grid">
         {{$st := .}}
         {{range .Def.Fields}}

@@ -23,6 +23,7 @@ func appleDefinition() *Definition {
 		DocsURL:        "https://developer.apple.com/documentation/sign_in_with_apple",
 		ConsoleURL:     "https://developer.apple.com/account/resources/identifiers/list/serviceId",
 		SupportsNative: true,
+		CallbackField:  "Identifiers > Services ID > Sign in with Apple > Return URLs",
 		Fields: []Field{
 			{Key: KeyClientID, Label: "Services ID", Required: true, Help: "The Services ID (e.g. com.example.web) configured with the callback URL above as Return URL."},
 			{Key: KeyTeamID, Label: "Team ID", Required: true},

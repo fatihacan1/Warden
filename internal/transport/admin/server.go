@@ -38,7 +38,7 @@ import (
 	"github.com/fatihacan1/warden/internal/token"
 )
 
-//go:embed templates/*.html static/*
+//go:embed templates/*.html static/* static/providers/*
 var assets embed.FS
 
 // Deps are the collaborators of the admin server.
@@ -202,8 +202,20 @@ var funcs = template.FuncMap{
 		b, _ := json.Marshal(v)
 		return string(b)
 	},
-	"add": func(a, b int) int { return a + b },
-	"sub": func(a, b int) int { return a - b },
+	"add":          func(a, b int) int { return a + b },
+	"providerIcon": providerIcon,
+	"sub":          func(a, b int) int { return a - b },
+}
+
+// providerIcon inlines a provider's brand mark (Simple Icons, CC0) so it can
+// use currentColor and needs no extra request. Unknown providers get none.
+func providerIcon(name string) template.HTML {
+	b, err := assets.ReadFile("static/providers/" + name + ".svg")
+	if err != nil {
+		return ""
+	}
+	svg := strings.Replace(string(b), "<svg ", `<svg class="pv-icon pv-`+name+`" aria-hidden="true" focusable="false" fill="currentColor" `, 1)
+	return template.HTML(svg) // #nosec G203 -- trusted file embedded at build time
 }
 
 func (s *Server) parseTemplates() error {

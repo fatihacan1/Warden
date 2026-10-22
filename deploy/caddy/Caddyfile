@@ -1,0 +1,10 @@
+# Public entrypoint for Warden with automatic HTTPS (Let's Encrypt).
+# Replace auth.example.com with your domain and point its DNS A/AAAA record
+# at this server before starting Caddy. Only the public API is exposed; the
+# admin UI (9090) and gRPC (9091) stay private.
+auth.example.com {
+	encode zstd gzip
+	reverse_proxy warden:8080 {
+		header_up X-Forwarded-For {remote_host}
+	}
+}

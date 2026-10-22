@@ -17,10 +17,12 @@ import (
 
 func discordDefinition() *Definition {
 	return &Definition{
-		Name:        "discord",
-		DisplayName: "Discord",
-		DocsURL:     "https://discord.com/developers/docs/topics/oauth2",
-		ConsoleURL:  "https://discord.com/developers/applications",
+		Name:            "discord",
+		DisplayName:     "Discord",
+		DocsURL:         "https://discord.com/developers/docs/topics/oauth2",
+		ConsoleURL:      "https://discord.com/developers/applications",
+		AllowsLocalhost: true,
+		CallbackField:   "OAuth2 > Redirects",
 		Fields: []Field{
 			{Key: KeyClientID, Label: "Client ID", Required: true, Help: "From the OAuth2 page of your Discord application. Add the callback URL above as a redirect."},
 			{Key: KeyClientSecret, Label: "Client secret", Secret: true, Required: true},
@@ -100,10 +102,12 @@ func (p *discord) Exchange(ctx context.Context, code, verifier, _ string, _ url.
 
 func githubDefinition() *Definition {
 	return &Definition{
-		Name:        "github",
-		DisplayName: "GitHub",
-		DocsURL:     "https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps",
-		ConsoleURL:  "https://github.com/settings/developers",
+		Name:            "github",
+		DisplayName:     "GitHub",
+		DocsURL:         "https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps",
+		ConsoleURL:      "https://github.com/settings/developers",
+		AllowsLocalhost: true,
+		CallbackField:   "OAuth App > Authorization callback URL",
 		Fields: []Field{
 			{Key: KeyClientID, Label: "Client ID", Required: true, Help: "From an OAuth App. Set the callback URL above as the Authorization callback URL."},
 			{Key: KeyClientSecret, Label: "Client secret", Secret: true, Required: true},
