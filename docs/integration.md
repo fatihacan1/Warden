@@ -418,3 +418,22 @@ Branch on `code`, show `message` to users if you like (it never reveals whether 
 | `invalid_secret_key`, `secret_key_in_browser` | 401, 403 | Server API called without a valid secret key, or from a browser |
 | `rate_limited` | 429 | Respect `Retry-After` |
 | `server_busy`, `service_unavailable` | 503 | Retry after `Retry-After` with backoff |
+
+## Languages and security emails
+
+Every email goes out in the user's language. Built in: English (`en`) and Turkish (`tr`). A user's language is, in order:
+
+1. what your app sets: `locale` on `POST /v1/auth/signup`, `PATCH /v1/me {"locale": "tr"}`, or the server API (`locale` on create and update);
+2. on sign-up without one, the best match of the browser's `Accept-Language`;
+3. otherwise the instance default (Settings > Language, or `AUTH_DEFAULT_LOCALE`).
+
+`locale` is returned on the user object so your app can show it. Wording and design are edited per language on the admin UI's **Emails** page.
+
+Security emails, all optional except the first two:
+
+| Email | When |
+| --- | --- |
+| Password changed | Password changed or reset |
+| Two-factor changed | TOTP turned on or off |
+| Sign-in from a new device | The first sign-in from a browser or app (by browser/app family and operating system) the account has not used in 180 days. Never for the first device of an account. At most 3 per account per hour. Contains device, IP, country when a trusted proxy reports it (`CF-IPCountry` and similar), method and time, and a link that ends that session after a confirmation click (mail scanners open links, so the link alone never signs anyone out). |
+| Account locked | Once, when wrong passwords reach the lockout threshold |

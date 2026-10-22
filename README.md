@@ -1,10 +1,12 @@
+<p align="center"><img src="docs/images/banner.png" alt="Warden: self-hosted authentication for web and mobile apps" width="100%"></p>
+
 # Warden
 
 A self-hosted authentication service in Go. Run one instance per product and every backend you write (Go, Node.js, Python, anything) gets sign-up, sign-in, social login, MFA and sessions without reimplementing them.
 
 Warden issues short-lived **ES256 JWT access tokens** that your services verify offline against a public JWKS endpoint, plus **rotating refresh tokens** with theft detection. Social providers (Google, Apple, GitHub, Discord) are switched on and off from a private admin UI, without touching code or restarting.
 
-![Warden admin: sign-in providers](docs/images/admin-providers.png)
+![Warden admin: email template editor](docs/images/admin-emails.png)
 
 ## Contents
 
@@ -31,6 +33,8 @@ Warden issues short-lived **ES256 JWT access tokens** that your services verify 
 - TOTP two-factor authentication with single-use codes and recovery codes
 - Email verification and password reset with single-use, expiring links
 - Safe account linking that blocks pre-account takeover
+- Security emails like hosted providers send: sign-in from a new device (with a button that ends that session), account locked after failed attempts, password and two-factor changes
+- Emails in the user's language (English and Turkish built in), chosen from the app, the browser or the admin UI
 
 **Sessions and tokens**
 - ES256 access tokens (RFC 9068 `at+jwt`), JWKS and OpenID discovery documents
@@ -47,8 +51,8 @@ Warden issues short-lived **ES256 JWT access tokens** that your services verify 
 - API docs inside the admin UI with working examples for your instance, and the OpenAPI file to download
 
 **Operations**
-- Setup wizard (`warden setup`): tests database, Redis, SMTP, S3 and RabbitMQ connections, generates secrets, picks the encryption algorithm and writes `.env`
-- Private admin UI: feature toggles, provider credentials, users, sessions, keys, email templates with live preview
+- Setup wizard (`warden setup`): a step-by-step onboarding that tests database, Redis, SMTP, S3 and RabbitMQ before moving on, generates secrets, picks the encryption algorithm and writes `.env`
+- Private admin UI: feature toggles, provider credentials, users, sessions, keys, email templates in a code editor with live preview, optional IP allowlist
 - Internal gRPC API for service-to-service calls (verify token, users, roles, disable, revoke)
 - Domain events to RabbitMQ through a transactional outbox (`user.created`, `user.signed_in`, ...)
 - Avatar uploads to any S3-compatible store (AWS S3, Garage, Cloudflare R2, MinIO, Backblaze B2)
@@ -59,6 +63,12 @@ Warden issues short-lived **ES256 JWT access tokens** that your services verify 
 ## Quick start
 
 Requirements: Docker Desktop (or Docker Engine with Compose v2). Go 1.26+ only for development.
+
+**Guided:** `go run ./cmd/warden setup` (or `make setup`) prints a link to a local page that walks you through each connection, tests it, generates secrets and writes `.env`. Then `docker compose up -d --build`.
+
+<p align="center"><img src="docs/images/admin-setup-onboarding.png" alt="Setup onboarding: one connection per step, tested before you continue" width="720"></p>
+
+**Manual:**
 
 ```bash
 git clone https://github.com/fatihacan1/warden.git
@@ -130,14 +140,18 @@ Run **one Warden instance per product** (its own database and Redis DB). Users, 
 
 The admin UI is how you configure an instance: switch features and providers on or off, paste provider keys, and look after users. It is server rendered, has no external dependencies and works on a phone.
 
-| Settings | Users |
+| Overview | User |
 | --- | --- |
-| ![Settings](docs/images/admin-settings.png) | ![User detail](docs/images/admin-user.png) |
+| ![Overview](docs/images/admin-overview.png) | ![User detail with sessions, roles and language](docs/images/admin-user.png) |
+| **API docs** | **Webhooks** |
+| ![API docs with working examples](docs/images/admin-docs.png) | ![Webhooks](docs/images/admin-webhooks.png) |
+| **API keys** | **Settings** |
+| ![API keys](docs/images/admin-api-keys.png) | ![Settings](docs/images/admin-settings.png) |
 
-- **Settings**: sign-ups, email verification, breached password check, password length, lockout, app name, email links, redirect URIs, CORS origins. Applied to every replica within 15 seconds.
+- **Settings**: sign-ups, email verification, breached password check, password length, lockout, app name, email links, redirect URIs, CORS origins, publishable key enforcement, default email language, security notifications, admin IP allowlist. Applied to every replica within 15 seconds.
 - **Sign-in providers**: enable Google, Apple, GitHub or Discord and paste their credentials. The page shows the exact callback URL to register with each provider. Secrets are encrypted at rest and never displayed again.
-- **Users**: search, sessions per device, security log, roles, disable, sign out everywhere.
-- **Emails**: edit the subject, HTML and plain text of every email and the shared layout, preview them with sample data, send yourself a test. Broken templates are rejected before they are saved.
+- **Users**: search with numbered pages, sessions per device, security log, roles, email language (with flags), disable, sign out everywhere.
+- **Emails**: every email and the shared layout, per language. Subject, HTML and plain text are edited in code editors with line numbers, HTML and template highlighting and click-to-insert variables; a sandboxed preview renders sample data, and you can send yourself a test. Broken templates are rejected before they are saved.
 - **API docs**: working examples (create the first user, sign in, update the profile, upload a photo, check a role, webhooks, GraphQL) with this instance's values, and the endpoint reference generated from the OpenAPI file, which you can download.
 - **API keys**: publishable keys for apps (bound to origins) and secret keys for backends; secrets are shown once.
 - **Webhooks**: endpoints, event selection, signing secrets, recent deliveries with retry.
@@ -146,7 +160,7 @@ The admin UI is how you configure an instance: switch features and providers on 
 
 Environment variables are the defaults; values saved in the UI override them and can be reset. Connections and secrets (database, Redis, S3, SMTP, encryption key) stay in the environment on purpose: they hold credentials and need a restart.
 
-Access is protected by `ADMIN_TOKEN` (32+ characters). Sessions are HttpOnly, `SameSite=Strict`, CSRF protected, bound to the current token (rotating the token signs every admin out), and every action is written to the audit log. Leave `ADMIN_TOKEN` empty to disable the UI entirely; `/metrics` and `/healthz` stay available on that port.
+Access is protected by `ADMIN_TOKEN` (32+ characters) and, optionally, an IP allowlist (Settings > Admin access; turning it on always adds your own address, and `ADMIN_IP_ALLOWLIST_DISABLED=true` gets you back in). Restrict the port at the network level first: VPN, SSH tunnel or a firewall rule. The allowlist is a second layer. Sessions are HttpOnly, `SameSite=Strict`, CSRF protected, bound to the current token (rotating the token signs every admin out), and every action is written to the audit log. Leave `ADMIN_TOKEN` empty to disable the UI entirely; `/metrics` and `/healthz` stay available on that port.
 
 ## Using Warden from your apps
 
@@ -275,7 +289,8 @@ Configuration is validated at startup. Unsafe combinations are rejected with a c
 | CSRF on cookie mode | Refresh cookie only honored with the `X-Auth-Mode: cookie` header; JSON-only bodies |
 | Malicious avatar uploads | Size and pixel limits (decompression bombs), decoded and re-encoded as JPEG (strips EXIF and polyglots) |
 | Secrets at rest | AES-256-GCM with per-record associated data for signing keys, TOTP seeds, provider secrets, queued emails |
-| Admin panel | Private port, token login with rate limit, `SameSite=Strict`, CSRF tokens, origin check, strict CSP, audit log |
+| Admin panel | Private port, token login with rate limit, optional IP allowlist, `SameSite=Strict`, CSRF tokens, origin check, strict CSP, audit log |
+| Account takeover going unnoticed | Email on sign-in from a new device with a one-click (confirmed) sign-out of that session; email when failed passwords lock the account; email on password and two-factor changes |
 | Unknown clients, other sites calling the API | Publishable keys bound to origins; optional enforcement; CORS allowlist without wildcards |
 | Leaked or misused backend credentials | Secret keys hashed at rest, shown once, per-key revocation and rate limit, rejected from browsers |
 | Webhook forgery and replay, SSRF through webhooks | HMAC-SHA256 signatures with timestamps; private, loopback and metadata addresses blocked at connect time in production; no redirects |

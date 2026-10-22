@@ -37,7 +37,7 @@
           <thead><tr><th>Device</th><th>Method</th><th class="hide-sm">IP</th><th>Last used</th></tr></thead>
           <tbody>
           {{range .Sessions}}
-            <tr><td>{{if .UserAgent}}{{printf "%.70s" .UserAgent}}{{else}}<span class="muted">Unknown</span>{{end}}</td><td><code>{{join .AMR " "}}</code></td><td class="hide-sm mono">{{.IP}}</td><td class="num" title="{{date .LastUsedAt}}">{{ago .LastUsedAt}}</td></tr>
+            <tr><td>{{with device .UserAgent}}{{.}}{{else}}<span class="muted">Unknown</span>{{end}}{{if .UserAgent}}<br><span class="muted small" title="{{.UserAgent}}">{{printf "%.60s" .UserAgent}}</span>{{end}}</td><td><code>{{join .AMR " "}}</code></td><td class="hide-sm mono">{{.IP}}</td><td class="num" title="{{date .LastUsedAt}}">{{ago .LastUsedAt}}</td></tr>
           {{else}}
             <tr><td colspan="4" class="muted">No active sessions.</td></tr>
           {{end}}

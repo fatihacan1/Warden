@@ -268,6 +268,7 @@ var funcs = template.FuncMap{
 		return template.HTML(`<img class="flag" src="/admin/static/flags/` + l.Code + `.svg" alt="" width="18" height="12">`) // #nosec G203 -- fixed list of codes
 	},
 	"langName": func(code string) string { return i18n.Lookup(code).Name },
+	"device":   auth.DescribeDevice,
 }
 
 // providerIcon inlines a provider's brand mark (Simple Icons, CC0) so it can

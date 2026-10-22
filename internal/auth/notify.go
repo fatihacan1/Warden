@@ -256,3 +256,10 @@ func firstLocale(candidates ...string) string {
 	}
 	return ""
 }
+
+// DescribeDevice returns a readable device name ("Chrome on Windows") for a
+// user agent, or "" when unknown.
+func DescribeDevice(ua string) string {
+	label, _ := describeDevice(ua)
+	return label
+}

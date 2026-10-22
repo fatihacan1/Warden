@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400">
+  <title>Warden: self-hosted authentication for web and mobile apps</title>
+  <defs>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#ffffff" stroke-opacity=".045" stroke-width="1"/>
+    </pattern>
+    <linearGradient id="fade" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#14120f" stop-opacity="1"/>
+      <stop offset=".55" stop-color="#14120f" stop-opacity=".2"/>
+      <stop offset="1" stop-color="#14120f" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="400" fill="#14120f"/>
+  <rect width="1280" height="400" fill="url(#grid)"/>
+  <rect width="1280" height="400" fill="url(#fade)"/>
+
+  <!-- Token flow: key, session, check -->
+  <g transform="translate(860 92)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="0" y="0" width="300" height="216" rx="14" fill="#1d1b17" stroke="#3a3731"/>
+    <circle cx="26" cy="26" r="5" fill="#3a3731" stroke="none"/><circle cx="44" cy="26" r="5" fill="#3a3731" stroke="none"/><circle cx="62" cy="26" r="5" fill="#3a3731" stroke="none"/>
+    <text x="24" y="74" fill="#a9a59c" font-family="ui-monospace,'Cascadia Mono',Menlo,Consolas,monospace" font-size="15">POST /v1/auth/signin</text>
+    <text x="24" y="104" fill="#7cc795" font-family="ui-monospace,'Cascadia Mono',Menlo,Consolas,monospace" font-size="15">200 authenticated</text>
+    <text xml:space="preserve" x="24" y="140" fill="#f1efe9" font-family="ui-monospace,'Cascadia Mono',Menlo,Consolas,monospace" font-size="15">typ   at+jwt</text>
+    <text xml:space="preserve" x="24" y="164" fill="#f1efe9" font-family="ui-monospace,'Cascadia Mono',Menlo,Consolas,monospace" font-size="15">alg   ES256</text>
+    <text xml:space="preserve" x="24" y="188" fill="#f1efe9" font-family="ui-monospace,'Cascadia Mono',Menlo,Consolas,monospace" font-size="15">roles <tspan fill="#f0654f">["admin"]</tspan></text>
+  </g>
+
+  <!-- Mark -->
+  <g transform="translate(96 108)">
+    <rect width="88" height="88" rx="16" fill="#f1efe9"/>
+    <path transform="scale(2.75)" d="M7 8h3.3l1.8 9.4L14.4 8h3.2l2.3 9.4L21.7 8H25l-3.7 15h-3l-2.3-8.6-2.3 8.6h-3z" fill="#14120f"/>
+    <rect x="19.25" y="68.75" width="49.5" height="5.5" rx="2.75" fill="#e0402b"/>
+  </g>
+  <text x="96" y="262" fill="#f1efe9" font-family="'Segoe UI Variable Display','Segoe UI',Inter,'Helvetica Neue',Arial,sans-serif" font-size="64" font-weight="700" letter-spacing="-1">Warden</text>
+  <text x="98" y="304" fill="#a9a59c" font-family="'Segoe UI',Inter,'Helvetica Neue',Arial,sans-serif" font-size="24">Self-hosted authentication for web and mobile apps</text>
+  <g font-family="'Segoe UI',Inter,'Helvetica Neue',Arial,sans-serif" font-size="15" fill="#d0cdc5">
+    <rect x="98" y="328" width="206" height="30" rx="15" fill="none" stroke="#46433d"/><text x="201" y="348" text-anchor="middle">Email + social sign-in</text>
+    <rect x="314" y="328" width="109" height="30" rx="15" fill="none" stroke="#46433d"/><text x="368" y="348" text-anchor="middle">Two-factor</text>
+    <rect x="433" y="328" width="92" height="30" rx="15" fill="none" stroke="#46433d"/><text x="479" y="348" text-anchor="middle">Webhooks</text>
+    <rect x="535" y="328" width="141" height="30" rx="15" fill="none" stroke="#46433d"/><text x="606" y="348" text-anchor="middle">TypeScript SDK</text>
+  </g>
+</svg>
