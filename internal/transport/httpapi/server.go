@@ -12,7 +12,9 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/requestid"
+	graphql "github.com/graph-gophers/graphql-go"
 
+	"github.com/fatihacan1/warden/internal/apikeys"
 	"github.com/fatihacan1/warden/internal/auth"
 	"github.com/fatihacan1/warden/internal/config"
 	"github.com/fatihacan1/warden/internal/oauth"
@@ -37,6 +39,7 @@ type Deps struct {
 	Log      *slog.Logger
 	Ready    Readiness
 	Settings *settings.Manager
+	APIKeys  *apikeys.Manager
 }
 
 type Server struct {
@@ -51,15 +54,22 @@ type Server struct {
 	log      *slog.Logger
 	ready    Readiness
 	settings *settings.Manager
+	apiKeys  *apikeys.Manager
+	gql      *graphql.Schema
 }
 
 const maxJSONBody = 64 << 10
 
 // New builds the Fiber application with every route and middleware.
-func New(d Deps) *Server {
+func New(d Deps) (*Server, error) {
 	s := &Server{
 		cfg: d.Config, auth: d.Auth, tokens: d.Tokens, keys: d.Keys, oauth: d.OAuth,
-		limiter: d.Limiter, metrics: d.Metrics, log: d.Log, ready: d.Ready, settings: d.Settings,
+		limiter: d.Limiter, metrics: d.Metrics, log: d.Log, ready: d.Ready, settings: d.Settings, apiKeys: d.APIKeys,
+	}
+	if d.Config.GraphQL.Enabled {
+		if err := s.buildGraphQL(); err != nil {
+			return nil, err
+		}
 	}
 	trusted := len(d.Config.HTTP.TrustedProxies) > 0
 	s.app = fiber.New(fiber.Config{
@@ -80,7 +90,7 @@ func New(d Deps) *Server {
 		ErrorHandler:       s.errorHandler,
 	})
 	s.routes()
-	return s
+	return s, nil
 }
 
 // App exposes the Fiber app (tests use app.Test).
@@ -96,10 +106,13 @@ func (s *Server) routes() {
 	a.Use(s.shedLoad())
 	a.Use(s.deadline())
 	// Origins are read per request so they can be edited in the admin UI.
+	// Origins bound to publishable keys are allowed too.
 	a.Use(cors.New(cors.Config{
-		AllowOriginsFunc: func(origin string) bool { return slices.Contains(s.settings.Get().CORSOrigins, origin) },
-		AllowMethods:     []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Authorization", "Content-Type", "X-Auth-Mode", "X-Request-ID"},
+		AllowOriginsFunc: func(origin string) bool {
+			return slices.Contains(s.settings.Get().CORSOrigins, origin) || slices.Contains(s.apiKeys.Origins(), origin)
+		},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Authorization", "Content-Type", "X-Auth-Mode", "X-Request-ID", "X-Warden-Key"},
 		ExposeHeaders:    []string{"X-Request-ID", "Retry-After"},
 		AllowCredentials: true,
 		MaxAge:           600,
@@ -115,7 +128,12 @@ func (s *Server) routes() {
 	refresh := s.rateLimit(ratelimit.Per("ip_refresh", max(60, cfg.RateLimit.AuthPerMinute*2), time.Minute))
 	email := s.rateLimit(ratelimit.Per("ip_email", 5, 15*time.Minute))
 
-	v1 := a.Group("/v1", global, noStore)
+	// Backends authenticate with a secret key and get their own, per key,
+	// rate limit instead of the per-IP one meant for end users.
+	sv := a.Group("/v1/server", noStore, jsonBody(maxJSONBody), s.requireSecretKey())
+	s.serverRoutes(sv)
+
+	v1 := a.Group("/v1", global, noStore, s.publishableKey())
 
 	ab := v1.Group("/auth", jsonBody(maxJSONBody))
 	ab.Get("/providers", s.providers)
@@ -152,6 +170,10 @@ func (s *Server) routes() {
 	me.Post("/mfa/totp/enable", jsonBody(maxJSONBody), strict, s.totpEnable)
 	me.Post("/mfa/totp/disable", jsonBody(maxJSONBody), strict, s.totpDisable)
 	me.Post("/mfa/recovery-codes", jsonBody(maxJSONBody), strict, s.regenerateRecoveryCodes)
+
+	if s.gql != nil {
+		a.Post("/graphql", global, noStore, s.publishableKey(), jsonBody(maxJSONBody), s.rateLimit(ratelimit.Per("ip_graphql", 120, time.Minute)), s.graphqlHandler)
+	}
 
 	a.Use(func(fiber.Ctx) error { return fiber.ErrNotFound })
 }

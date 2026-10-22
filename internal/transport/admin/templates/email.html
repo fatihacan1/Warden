@@ -1,0 +1,82 @@
+{{define "content"}}{{$csrf := .CSRF}}{{with .Data}}{{$i := .Info}}
+<p class="crumb"><a href="/admin/emails">Emails</a></p>
+<div class="head">
+  <div>
+    <h1>{{$i.Title}}</h1>
+    <p class="lede">{{$i.Description}}</p>
+  </div>
+  {{if .Custom}}<span class="tag tag-accent">Customized</span>{{else}}<span class="tag">Built-in</span>{{end}}
+</div>
+
+<div class="editor">
+  <form method="post" action="/admin/emails/{{$i.Name}}" class="panel" id="email-form">
+    <input type="hidden" name="_csrf" value="{{$csrf}}">
+    <header><h2>Template</h2></header>
+    <div class="panel-body">
+      {{if not .Layout}}
+      <div class="field">
+        <label for="subject">Subject</label>
+        <input id="subject" name="subject" type="text" spellcheck="false" value="{{.Src.Subject}}">
+      </div>
+      {{end}}
+      <div class="field">
+        <label for="html">HTML</label>
+        <textarea id="html" name="html" class="code-area" spellcheck="false" rows="16">{{.Src.HTML}}</textarea>
+        {{if .Layout}}<p class="help">Must define <code>layout_start</code> and <code>layout_end</code>. Every template is checked against the new layout before saving.</p>{{else}}<p class="help">Wrap the content in <code>{{"{{"}}template "layout_start" .{{"}}"}}</code> and <code>{{"{{"}}template "layout_end" .{{"}}"}}</code> to use the shared layout.</p>{{end}}
+      </div>
+      {{if not .Layout}}
+      <div class="field">
+        <label for="text">Plain text</label>
+        <textarea id="text" name="text" class="code-area" spellcheck="false" rows="8">{{.Src.Text}}</textarea>
+        <p class="help">Shown by clients that do not render HTML, and used by spam filters. Keep it in sync.</p>
+      </div>
+      {{end}}
+      <div class="row">
+        <button class="btn btn-primary" type="submit">Save template</button>
+        <button class="btn" type="submit" formaction="/admin/emails/{{$i.Name}}/preview" formtarget="preview">Preview changes</button>
+      </div>
+    </div>
+  </form>
+
+  <div class="stack">
+    <section class="panel">
+      <header><h2>Preview</h2><span class="muted small">Sample data</span></header>
+      <iframe name="preview" class="preview-frame" title="Email preview" sandbox src="/admin/emails/{{$i.Name}}/preview"></iframe>
+      {{if not .Layout}}<p class="panel-body small mb-0"><a href="/admin/emails/{{$i.Name}}/preview?view=text" target="preview">Plain text version</a> · <a href="/admin/emails/{{$i.Name}}/preview" target="preview">HTML version</a></p>{{end}}
+    </section>
+
+    <section class="panel">
+      <header><h2>Variables</h2></header>
+      <div class="panel-body">
+        <dl class="kv">
+          <dt><code>{{"{{"}}.AppName{{"}}"}}</code></dt><dd>App name from Settings</dd>
+          <dt><code>{{"{{"}}.Year{{"}}"}}</code></dt><dd>Current year</dd>
+          {{range $k, $v := $i.Vars}}<dt><code>{{"{{"}}.Data.{{$k}}{{"}}"}}</code></dt><dd>{{$v}}</dd>{{end}}
+        </dl>
+      </div>
+    </section>
+
+    {{if not .Layout}}
+    <section class="panel">
+      <header><h2>Send a test</h2></header>
+      <form method="post" action="/admin/emails/{{$i.Name}}/test" class="panel-body">
+        <input type="hidden" name="_csrf" value="{{$csrf}}">
+        <div class="field">
+          <label for="to">To</label>
+          <input id="to" name="to" type="text" inputmode="email" autocomplete="email" placeholder="you@example.com">
+          <p class="help">Sends the saved version with sample data{{if not .SMTP}} (SMTP is off, so it goes to the log){{end}}.</p>
+        </div>
+        <button class="btn" type="submit">Send test email</button>
+      </form>
+    </section>
+    {{end}}
+
+    {{if .Custom}}
+    <form method="post" action="/admin/emails/{{$i.Name}}/reset" data-confirm="Discard your changes and use the built-in template again?">
+      <input type="hidden" name="_csrf" value="{{$csrf}}">
+      <button class="btn btn-small" type="submit">Reset to built-in</button>
+    </form>
+    {{end}}
+  </div>
+</div>
+{{end}}{{end}}

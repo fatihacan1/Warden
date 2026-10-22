@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +22,14 @@ type Publisher interface {
 	Publish(ctx context.Context, topic, messageID string, body []byte) error
 }
 
+// WebhookDeliverer posts a queued event to a webhook endpoint.
+type WebhookDeliverer interface {
+	Deliver(ctx context.Context, topic, messageID string, body []byte) error
+}
+
+// WebhookTopicPrefix marks outbox rows that are webhook deliveries.
+const WebhookTopicPrefix = "webhook:"
+
 // RelayStore is the persistence the relay needs.
 type RelayStore interface {
 	ClaimOutbox(ctx context.Context, limit int, lease time.Duration) ([]store.OutboxMessage, error)
@@ -33,6 +42,7 @@ type RelayStore interface {
 type Relay struct {
 	store       RelayStore
 	publisher   Publisher // nil when events are disabled
+	webhooks    WebhookDeliverer
 	sender      mailer.Sender
 	renderer    *mailer.Renderer
 	box         *secretbox.Box
@@ -50,6 +60,12 @@ func NewRelay(st RelayStore, pub Publisher, sender mailer.Sender, renderer *mail
 		store: st, publisher: pub, sender: sender, renderer: renderer, box: box, log: log, metrics: metrics,
 		batch: 50, maxAttempts: 15, poll: time.Second, workers: 8,
 	}
+}
+
+// WithWebhooks enables webhook delivery.
+func (r *Relay) WithWebhooks(w WebhookDeliverer) *Relay {
+	r.webhooks = w
+	return r
 }
 
 // Run polls until ctx is cancelled.
@@ -112,8 +128,11 @@ func (r *Relay) deliver(ctx context.Context, m store.OutboxMessage) {
 	defer cancel()
 	kind := "event"
 	isEmail := m.Topic == EmailTopic
-	if isEmail {
+	switch {
+	case isEmail:
 		kind = "email"
+	case strings.HasPrefix(m.Topic, WebhookTopicPrefix):
+		kind = "webhook"
 	}
 	err := r.dispatch(dctx, m, isEmail)
 	if err == nil {
@@ -135,7 +154,23 @@ func (r *Relay) deliver(ctx context.Context, m store.OutboxMessage) {
 
 type permanentError struct{ error }
 
+func (p permanentError) Unwrap() error { return p.error }
+
+// Permanent marks a delivery error that retrying cannot fix: the message is
+// moved to the dead letters right away.
+func Permanent(err error) error { return permanentError{err} }
+
 func (r *Relay) dispatch(ctx context.Context, m store.OutboxMessage, isEmail bool) error {
+	if strings.HasPrefix(m.Topic, WebhookTopicPrefix) {
+		if r.webhooks == nil {
+			return nil
+		}
+		var env Envelope
+		if err := json.Unmarshal(m.Payload, &env); err != nil {
+			return permanentError{fmt.Errorf("decode event: %w", err)}
+		}
+		return r.webhooks.Deliver(ctx, m.Topic, env.ID, m.Payload)
+	}
 	if !isEmail {
 		if r.publisher == nil {
 			return nil // events disabled after being enqueued: drop

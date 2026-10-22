@@ -1,0 +1,13 @@
+{{/* Shared fragments, available to every page. */}}
+{{define "eventpicker"}}
+      <fieldset class="events">
+        <legend>Events</legend>
+        <label class="check"><input type="checkbox" name="all_events" {{if .All}}checked{{end}}> All events, including ones added later</label>
+        <div class="event-grid">
+        {{$wanted := .Wanted}}
+        {{range .Events}}
+          <label class="check mono"><input type="checkbox" name="event_{{.}}" {{if index $wanted .}}checked{{end}}> {{.}}</label>
+        {{end}}
+        </div>
+      </fieldset>
+{{end}}

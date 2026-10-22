@@ -1,8 +1,10 @@
 // Command warden runs the Warden authentication service.
 //
 //	warden serve            start the HTTP, admin and (optional) gRPC servers
+//	warden setup            open the first-run wizard that tests connections and writes .env
 //	warden migrate          apply database migrations and exit
 //	warden migrate status   show migration status
+//	warden reencrypt        re-encrypt stored secrets with the current ENCRYPTION_KEY
 //	warden keygen           print fresh random secrets for .env
 //	warden healthcheck      exit 0 if the local HTTP server is healthy (Docker HEALTHCHECK)
 //	warden version          print the version
@@ -13,6 +15,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -25,6 +28,8 @@ import (
 	"github.com/fatihacan1/warden/internal/config"
 	"github.com/fatihacan1/warden/internal/observability"
 	"github.com/fatihacan1/warden/internal/platform/postgres"
+	"github.com/fatihacan1/warden/internal/setup"
+	"github.com/fatihacan1/warden/internal/store"
 )
 
 func main() {
@@ -35,8 +40,12 @@ func main() {
 	switch cmd {
 	case "serve":
 		serve()
+	case "setup":
+		setupWizard(os.Args[2:])
 	case "migrate":
 		migrate(len(os.Args) > 2 && os.Args[2] == "status")
+	case "reencrypt":
+		reencrypt()
 	case "keygen":
 		keygen()
 	case "healthcheck":
@@ -44,7 +53,7 @@ func main() {
 	case "version", "--version", "-v":
 		fmt.Println(observability.Version)
 	case "help", "--help", "-h":
-		fmt.Println("usage: warden [serve|migrate [status]|keygen|healthcheck|version]")
+		fmt.Println("usage: warden [serve|setup|migrate [status]|reencrypt|keygen|healthcheck|version]")
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
 		os.Exit(2)
@@ -60,9 +69,62 @@ func load() *config.Config {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "invalid configuration:")
 		fmt.Fprintln(os.Stderr, " -", strings.ReplaceAll(err.Error(), "\n", "\n - "))
+		fmt.Fprintln(os.Stderr, "\nRun `warden setup` to create or fix the configuration in your browser.")
 		os.Exit(1)
 	}
 	return cfg
+}
+
+func setupWizard(args []string) {
+	flags := flag.NewFlagSet("setup", flag.ExitOnError)
+	addr := flags.String("addr", "127.0.0.1:9095", "listen address (loopback only unless --allow-remote)")
+	file := flags.String("env-file", ".env", "configuration file to write")
+	remote := flags.Bool("allow-remote", false, "allow a non-loopback address, e.g. inside a container")
+	_ = flags.Parse(args)
+	log := observability.NewLogger("info", "text", "warden-setup", "setup")
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	err := setup.Run(ctx, setup.Options{Addr: *addr, EnvFile: *file, AllowRemote: *remote, Log: log, Ready: func(u string) {
+		fmt.Println("Warden setup is running. Open this link in your browser (it contains a one-time token):")
+		fmt.Println()
+		fmt.Println("  " + u)
+		fmt.Println()
+		fmt.Println("Press Ctrl+C to stop without saving.")
+	}})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func reencrypt() {
+	cfg := load()
+	log := observability.NewLogger(cfg.LogLevel, cfg.LogFormat, cfg.ServiceName, cfg.Env)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	box, err := cfg.SecretBox()
+	if err != nil {
+		app.Exit(log, err)
+	}
+	pool, err := postgres.Connect(ctx, cfg.Database)
+	if err != nil {
+		app.Exit(log, err)
+	}
+	defer pool.Close()
+	res, err := app.Reencrypt(ctx, store.New(pool), box)
+	total := 0
+	for _, r := range res {
+		fmt.Printf("%-28s %d re-encrypted\n", r.Column, r.Changed)
+		total += r.Changed
+	}
+	if err != nil {
+		app.Exit(log, err)
+	}
+	fmt.Printf("\nDone: %d values now use the current key (%s).", total, box.Algorithm())
+	if len(cfg.EncryptionPreviousKeys) > 0 {
+		fmt.Print(" ENCRYPTION_PREVIOUS_KEYS can be removed once every replica runs with this configuration.")
+	}
+	fmt.Println()
 }
 
 func serve() {

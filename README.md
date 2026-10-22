@@ -38,12 +38,22 @@ Warden issues short-lived **ES256 JWT access tokens** that your services verify 
 - Automatic signing key rotation with zero downtime
 - Session list and remote sign-out per device; cookie mode (HttpOnly) for browser apps
 
+**For your apps**
+- [`warden-auth`](https://github.com/fatihacan1/warden-js): zero-dependency TypeScript SDK for web, React Native and Node.js, with example account screens
+- Publishable keys (per app, bound to origins) and secret keys (per backend) managed in the admin UI
+- Server API for backends: create users (including the first admin), set roles, disable, sign out, introspect tokens
+- Webhooks for `user.created`, `user.updated` and every other event, signed per [Standard Webhooks](https://www.standardwebhooks.com), retried per endpoint
+- Optional GraphQL endpoint with depth, size and introspection limits
+- API docs inside the admin UI with working examples for your instance, and the OpenAPI file to download
+
 **Operations**
-- Private admin UI: feature toggles, provider credentials, users, sessions, keys, integration snippets
+- Setup wizard (`warden setup`): tests database, Redis, SMTP, S3 and RabbitMQ connections, generates secrets, picks the encryption algorithm and writes `.env`
+- Private admin UI: feature toggles, provider credentials, users, sessions, keys, email templates with live preview
 - Internal gRPC API for service-to-service calls (verify token, users, roles, disable, revoke)
 - Domain events to RabbitMQ through a transactional outbox (`user.created`, `user.signed_in`, ...)
 - Avatar uploads to any S3-compatible store (AWS S3, Garage, Cloudflare R2, MinIO, Backblaze B2)
-- Prometheus metrics, structured JSON logs, Sentry error reporting, health and readiness probes
+- Encryption at rest with AES-256-GCM or XChaCha20-Poly1305, key rotation without downtime (`warden reencrypt`)
+- Prometheus metrics with ready alert rules and a Grafana dashboard, structured JSON logs, Sentry error reporting, health and readiness probes
 - Load shedding, bounded password hashing, distributed rate limiting, graceful shutdown
 
 ## Quick start
@@ -73,6 +83,8 @@ curl -s localhost:8080/v1/auth/signup -H 'Content-Type: application/json' \
 
 curl -s localhost:8080/v1/me -H "Authorization: Bearer <access_token from the response>"
 ```
+
+Prefer a guided setup? `go run ./cmd/warden setup` opens a local page that tests each connection, generates secrets and writes `.env` for you.
 
 The values in `.env.example` are public development defaults. Warden refuses to start with them when `APP_ENV=production`; generate your own with `docker compose run --rm --no-deps warden keygen` or `go run ./cmd/warden keygen`.
 
@@ -125,6 +137,10 @@ The admin UI is how you configure an instance: switch features and providers on 
 - **Settings**: sign-ups, email verification, breached password check, password length, lockout, app name, email links, redirect URIs, CORS origins. Applied to every replica within 15 seconds.
 - **Sign-in providers**: enable Google, Apple, GitHub or Discord and paste their credentials. The page shows the exact callback URL to register with each provider. Secrets are encrypted at rest and never displayed again.
 - **Users**: search, sessions per device, security log, roles, disable, sign out everywhere.
+- **Emails**: edit the subject, HTML and plain text of every email and the shared layout, preview them with sample data, send yourself a test. Broken templates are rejected before they are saved.
+- **API docs**: working examples (create the first user, sign in, update the profile, upload a photo, check a role, webhooks, GraphQL) with this instance's values, and the endpoint reference generated from the OpenAPI file, which you can download.
+- **API keys**: publishable keys for apps (bound to origins) and secret keys for backends; secrets are shown once.
+- **Webhooks**: endpoints, event selection, signing secrets, recent deliveries with retry.
 - **Signing keys**: current key, rotation schedule, rotate now.
 - **Integrate**: issuer, audience, JWKS URL and copy-paste verification snippets for this instance.
 
@@ -134,7 +150,29 @@ Access is protected by `ADMIN_TOKEN` (32+ characters). Sessions are HttpOnly, `S
 
 ## Using Warden from your apps
 
-The short version for an Express API:
+With the SDK (`npm install warden-auth`), in a web or React Native app:
+
+```ts
+import { createWarden } from "warden-auth";
+
+const warden = createWarden({ url: "https://auth.example.com", publishableKey: "pk_live_...", mode: "cookie" });
+
+await warden.signIn({ email, password });
+await warden.user.update({ name: "Ada Lovelace" });
+await warden.user.uploadAvatar(file);
+const res = await warden.fetch("https://api.example.com/orders"); // access token attached and refreshed
+```
+
+and in your API:
+
+```ts
+import { createWardenServer } from "warden-auth/server";
+
+const warden = createWardenServer({ url: "https://auth.example.com", secretKey: process.env.WARDEN_SECRET_KEY });
+app.get("/admin/reports", warden.express({ roles: ["admin"] }), handler);
+```
+
+Without the SDK, the short version for an Express API:
 
 ```js
 import { createRemoteJWKSet, jwtVerify } from "jose";
@@ -187,6 +225,11 @@ Full schema: [api/openapi.yaml](api/openapi.yaml). Errors always look like `{"er
 | GET, DELETE | `/v1/me/identities[/{provider}]` | Linked social accounts |
 | POST | `/v1/me/mfa/totp/setup`, `/enable`, `/disable` | Manage two-factor authentication |
 | POST | `/v1/me/mfa/recovery-codes` | Regenerate recovery codes |
+| POST, GET | `/v1/server/users` | Server API (secret key): create a user, find by email |
+| GET, PATCH | `/v1/server/users/{id}` | Server API: read; change name, roles, disabled |
+| DELETE | `/v1/server/users/{id}/sessions` | Server API: sign a user out everywhere |
+| POST | `/v1/server/tokens/verify` | Server API: introspect an access token |
+| POST | `/graphql` | Optional GraphQL account API |
 | GET | `/.well-known/jwks.json`, `/.well-known/openid-configuration` | Public keys and discovery |
 | GET | `/healthz`, `/readyz` | Liveness and readiness |
 
@@ -194,7 +237,7 @@ Full schema: [api/openapi.yaml](api/openapi.yaml). Errors always look like `{"er
 
 **gRPC** (`warden.v1.AuthService`, port 9091, `x-api-key` metadata): `VerifyAccessToken`, `GetUser`, `GetUsers`, `SetUserRoles`, `SetUserDisabled`, `RevokeUserSessions`. Generated Go client: `github.com/fatihacan1/warden/pkg/api/wardenv1`; proto: [api/proto](api/proto).
 
-**Events** (RabbitMQ topic exchange `warden.events`, routing key = type): `user.created`, `user.updated`, `user.deleted`, `user.email_verified`, `user.password_changed`, `user.signed_in`, `user.disabled`, `user.enabled`, `user.mfa_enabled`, `user.mfa_disabled`, `identity.linked`, `identity.unlinked`, `session.revoked`. Delivery is at-least-once; deduplicate on the event `id`.
+**Events** (RabbitMQ topic exchange `warden.events`, routing key = type): `user.created`, `user.updated`, `user.deleted`, `user.email_verified`, `user.password_changed`, `user.signed_in`, `user.disabled`, `user.enabled`, `user.mfa_enabled`, `user.mfa_disabled`, `identity.linked`, `identity.unlinked`, `session.revoked`. Delivery is at-least-once; deduplicate on the event `id`. The same events go to **webhooks** configured in the admin UI, with no broker needed.
 
 ## Configuration
 
@@ -203,7 +246,10 @@ Every option is documented in [.env.example](.env.example). The most important o
 | Variable | Purpose |
 | --- | --- |
 | `HTTP_PUBLIC_URL` | External URL; also the token issuer and the base of OAuth callback URLs |
-| `ENCRYPTION_KEY` | 32 bytes, base64. Encrypts signing keys, TOTP seeds, provider secrets and queued emails |
+| `ENCRYPTION_KEY` | 32 bytes, base64. Encrypts signing keys, TOTP seeds, provider secrets, webhook secrets and queued emails |
+| `ENCRYPTION_ALGORITHM`, `ENCRYPTION_PREVIOUS_KEYS` | `aes-256-gcm` or `xchacha20-poly1305`; retired keys kept readable during a rotation |
+| `GRAPHQL_ENABLED` | Serve `POST /graphql` |
+| `WEBHOOK_ALLOW_PRIVATE_NETWORKS` | Let webhooks call private addresses (off in production) |
 | `ADMIN_TOKEN` | Enables the admin UI |
 | `DATABASE_URL`, `REDIS_URL` | Required dependencies |
 | `S3_*`, `RABBITMQ_URL`, `SMTP_*` | Optional: avatars, events, real email delivery |
@@ -230,6 +276,11 @@ Configuration is validated at startup. Unsafe combinations are rejected with a c
 | Malicious avatar uploads | Size and pixel limits (decompression bombs), decoded and re-encoded as JPEG (strips EXIF and polyglots) |
 | Secrets at rest | AES-256-GCM with per-record associated data for signing keys, TOTP seeds, provider secrets, queued emails |
 | Admin panel | Private port, token login with rate limit, `SameSite=Strict`, CSRF tokens, origin check, strict CSP, audit log |
+| Unknown clients, other sites calling the API | Publishable keys bound to origins; optional enforcement; CORS allowlist without wildcards |
+| Leaked or misused backend credentials | Secret keys hashed at rest, shown once, per-key revocation and rate limit, rejected from browsers |
+| Webhook forgery and replay, SSRF through webhooks | HMAC-SHA256 signatures with timestamps; private, loopback and metadata addresses blocked at connect time in production; no redirects |
+| GraphQL abuse | POST JSON only, no batching, depth, length and parallelism limits, introspection off in production |
+| Key compromise | Encryption key rotation with `ENCRYPTION_PREVIOUS_KEYS` and `warden reencrypt`; signing key rotation from the admin UI |
 
 Verification: unit tests, an integration suite that attacks the running service (token forgery, PKCE bypass, redirect tricks, CSRF, reuse, lockout, enumeration), `govulncheck`, `gosec` and Semgrep in CI. See [SECURITY.md](SECURITY.md) to report a vulnerability.
 
@@ -251,6 +302,7 @@ Local k6 run ([loadtest/auth.js](loadtest/auth.js)) on a 12-core laptop, all ser
 - **Logs**: structured JSON (`LOG_FORMAT=json`) with request ids. Tokens, passwords and query strings are never logged.
 - **Errors**: set `SENTRY_DSN` to report panics and unexpected errors; cookies, auth headers and request bodies are scrubbed first.
 - **Probes**: `/healthz` (process alive) and `/readyz` (Postgres and Redis reachable).
+- **Dashboards and alerts**: `docker compose --profile monitoring up -d` starts Prometheus (http://localhost:9092) with [alert rules](deploy/prometheus/alerts.yml) and Grafana (http://localhost:3001) with a provisioned Warden dashboard. See [docs/production.md](docs/production.md#monitoring-and-alerts).
 
 ## Development
 
@@ -264,7 +316,7 @@ go test -tags integration ./test/e2e/ -count=1        # integration tests agains
 
 `make help` lists shortcuts (lint, proto generation, image build, load test). Regenerate gRPC code with `buf generate` after editing `api/proto`.
 
-Commands of the binary: `warden serve` (default), `warden migrate [status]`, `warden keygen`, `warden healthcheck`, `warden version`.
+Commands of the binary: `warden serve` (default), `warden setup`, `warden migrate [status]`, `warden reencrypt`, `warden keygen`, `warden healthcheck`, `warden version`.
 
 For production deployment, scaling and the go-live checklist see [docs/production.md](docs/production.md).
 
@@ -277,16 +329,20 @@ internal/auth/         business logic: sign-in, sessions, MFA, OAuth linking, ac
 internal/oauth/        identity providers (one file each), flow state, registry
 internal/token/        ES256 JWTs, signing key rotation, JWKS
 internal/settings/     runtime feature toggles edited from the admin UI
+internal/setup/        first-run wizard (warden setup)
+internal/apikeys/      publishable and secret API keys
+internal/webhooks/     webhook endpoints, signing and delivery
+internal/mailer/       email templates, overrides and SMTP
 internal/store/        PostgreSQL queries
 internal/events/       transactional outbox and relay
-internal/transport/    httpapi (public REST), grpcapi (internal), admin (UI)
+internal/transport/    httpapi (public REST, server API, GraphQL), grpcapi (internal), admin (UI)
 internal/crypto/       Argon2id hasher, AES-GCM secret box, random tokens
 internal/platform/     Postgres, Redis, S3, RabbitMQ adapters
 migrations/            SQL migrations, embedded in the binary
 api/                   OpenAPI spec and protobuf definitions
 pkg/api/wardenv1/      generated gRPC client for Go services
 test/e2e/              integration and attack tests
-deploy/                local Garage setup
+deploy/                Caddy, Garage, Prometheus alerts, Grafana dashboard
 ```
 
 ## Contributing

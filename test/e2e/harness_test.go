@@ -116,6 +116,7 @@ func run(m *testing.M) int {
 		"SMTP_HOST":                       "",
 		"OAUTH_GOOGLE_ENABLED":            "false",
 		"AUTH_REQUIRE_EMAIL_VERIFICATION": "false",
+		"GRAPHQL_ENABLED":                 "true",
 	}
 	for k, v := range settings {
 		os.Setenv(k, v)
@@ -141,8 +142,7 @@ func run(m *testing.M) int {
 		return 1
 	}
 
-	renderer, _ := mailer.NewRenderer(func() string { return "Warden" })
-	relay = events.NewRelay(A.Store, nil, mails, renderer, A.Box, log, nil)
+	relay = events.NewRelay(A.Store, nil, mails, A.Renderer, A.Box, log, nil).WithWebhooks(A.Webhooks)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

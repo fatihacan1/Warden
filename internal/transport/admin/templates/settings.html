@@ -60,7 +60,14 @@
       <div class="field">
         <label for="cors_origins">Browser origins (CORS)</label>
         <textarea id="cors_origins" name="cors_origins" spellcheck="false" placeholder="https://app.example.com">{{join $s.CORSOrigins "\n"}}</textarea>
-        <p class="help">One per line. Web apps on these origins may call the API from the browser. Mobile and server apps need nothing here.</p>
+        <p class="help">One per line. Web apps on these origins may call the API from the browser. Origins added to a publishable key are allowed too. Mobile and server apps need nothing here.</p>
+      </div>
+      <div class="toggle-row wide">
+        <div>
+          <h3>Require a publishable key</h3>
+          <p class="help">Reject public API calls that do not send a valid <code>X-Warden-Key</code>. Create keys on the <a href="/admin/api-keys">API keys</a> page and set them in your apps first, or they stop working.</p>
+        </div>
+        <label class="switch"><input type="checkbox" name="require_publishable_key" {{if $s.RequirePublishableKey}}checked{{end}} aria-label="Require a publishable key"></label>
       </div>
     </div>
   </section>

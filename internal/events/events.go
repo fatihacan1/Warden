@@ -35,6 +35,12 @@ const (
 	SessionRevoked     = "session.revoked"
 )
 
+// Types lists every event type, in the order the admin UI shows them.
+var Types = []string{
+	UserCreated, UserUpdated, UserDeleted, UserEmailVerified, UserPasswordChange, UserSignedIn,
+	UserDisabled, UserEnabled, UserMFAEnabled, UserMFADisabled, IdentityLinked, IdentityUnlinked, SessionRevoked,
+}
+
 // EmailTopic marks outbox rows delivered by the mailer, not RabbitMQ.
 const EmailTopic = "email.send"
 
@@ -54,30 +60,62 @@ type EmailJob struct {
 	Data     map[string]string `json:"data"`
 }
 
+// Fanout returns the extra outbox topics an event is copied to (one per
+// subscribed webhook endpoint).
+type Fanout interface {
+	Targets(eventType string) []string
+}
+
 // Writer enqueues events and emails inside the caller's transaction.
 type Writer struct {
 	box           *secretbox.Box
 	eventsEnabled bool
+	fanout        Fanout
 }
 
-func NewWriter(box *secretbox.Box, eventsEnabled bool) *Writer {
-	return &Writer{box: box, eventsEnabled: eventsEnabled}
+// NewWriter creates a writer. eventsEnabled sends events to RabbitMQ; fanout
+// (may be nil) adds webhook deliveries.
+func NewWriter(box *secretbox.Box, eventsEnabled bool, fanout Fanout) *Writer {
+	return &Writer{box: box, eventsEnabled: eventsEnabled, fanout: fanout}
 }
 
-// Event enqueues a domain event. It is a no-op when no broker is configured.
+// Event enqueues a domain event for RabbitMQ and for every webhook endpoint
+// that subscribes to it. It is a no-op when nobody listens.
 func (w *Writer) Event(ctx context.Context, tx *store.Store, typ string, userID uuid.UUID, data any) error {
-	if !w.eventsEnabled {
+	var topics []string
+	if w.eventsEnabled {
+		topics = append(topics, typ)
+	}
+	if w.fanout != nil {
+		topics = append(topics, w.fanout.Targets(typ)...)
+	}
+	if len(topics) == 0 {
 		return nil
 	}
+	body, err := NewEnvelope(typ, userID, data)
+	if err != nil {
+		return err
+	}
+	for _, t := range topics {
+		if err := tx.EnqueueOutbox(ctx, t, body); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// NewEnvelope encodes an event. All copies of one event share its id, so
+// consumers can deduplicate across RabbitMQ and webhooks.
+func NewEnvelope(typ string, userID uuid.UUID, data any) ([]byte, error) {
 	env := Envelope{ID: uuid.Must(uuid.NewV7()).String(), Type: typ, OccurredAt: time.Now().UTC(), Data: data}
 	if userID != uuid.Nil {
 		env.UserID = userID.String()
 	}
 	body, err := json.Marshal(env)
 	if err != nil {
-		return fmt.Errorf("events: marshal: %w", err)
+		return nil, fmt.Errorf("events: marshal: %w", err)
 	}
-	return tx.EnqueueOutbox(ctx, typ, body)
+	return body, nil
 }
 
 // Email enqueues a transactional email. The payload contains one-time links,

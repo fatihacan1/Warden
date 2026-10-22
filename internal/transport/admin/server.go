@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"log/slog"
@@ -26,16 +27,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/fatihacan1/warden/internal/apikeys"
 	"github.com/fatihacan1/warden/internal/auth"
 	"github.com/fatihacan1/warden/internal/config"
 	"github.com/fatihacan1/warden/internal/crypto/randtoken"
 	"github.com/fatihacan1/warden/internal/domain"
+	"github.com/fatihacan1/warden/internal/mailer"
 	"github.com/fatihacan1/warden/internal/oauth"
 	"github.com/fatihacan1/warden/internal/observability"
 	"github.com/fatihacan1/warden/internal/ratelimit"
 	"github.com/fatihacan1/warden/internal/settings"
 	"github.com/fatihacan1/warden/internal/store"
 	"github.com/fatihacan1/warden/internal/token"
+	"github.com/fatihacan1/warden/internal/webhooks"
 )
 
 //go:embed templates/*.html static/* static/providers/*
@@ -55,6 +59,11 @@ type Deps struct {
 	Ready    func(ctx context.Context) map[string]error
 	Events   bool
 	Settings *settings.Manager
+	APIKeys  *apikeys.Manager
+	Webhooks *webhooks.Manager
+	Mail     *mailer.Library
+	Renderer *mailer.Renderer
+	Sender   mailer.Sender
 }
 
 type Server struct {
@@ -64,6 +73,7 @@ type Server struct {
 	tokenHash [32]byte
 	enabled   bool
 	assets    string // content hash for cache busting static files
+	reference []refGroup
 }
 
 const (
@@ -77,6 +87,11 @@ func New(d Deps) (*Server, error) {
 	if err := s.parseTemplates(); err != nil {
 		return nil, err
 	}
+	ref, err := buildReference()
+	if err != nil {
+		return nil, fmt.Errorf("admin: api/openapi.yaml: %w", err)
+	}
+	s.reference = ref
 	h := sha256.New()
 	for _, f := range []string{"static/admin.css", "static/admin.js"} {
 		b, _ := assets.ReadFile(f)
@@ -97,6 +112,12 @@ func New(d Deps) (*Server, error) {
 
 func (s *Server) App() *fiber.App { return s.app }
 
+// StaticFS exposes the admin stylesheet and icons (the setup wizard reuses them).
+func StaticFS() fs.FS {
+	sub, _ := fs.Sub(assets, "static")
+	return sub
+}
+
 func (s *Server) Listen(addr string) error {
 	return s.app.Listen(addr, fiber.ListenConfig{DisableStartupMessage: true})
 }
@@ -111,7 +132,7 @@ func (s *Server) routes() {
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "same-origin")
 		h.Set("Cache-Control", "no-store")
-		h.Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data: https: http:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+		h.Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data: https: http:; frame-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 		return c.Next()
 	})
 	a.Get("/healthz", func(c fiber.Ctx) error { return c.JSON(fiber.Map{"status": "ok"}) })
@@ -163,6 +184,32 @@ func (s *Server) routes() {
 	g.Get("/keys", s.keysPage)
 	g.Post("/keys/rotate", s.originCheck, s.csrf, s.rotateKeys)
 	g.Get("/setup", s.setupPage)
+
+	g.Get("/api-keys", s.apiKeysPage)
+	g.Post("/api-keys", s.originCheck, s.csrf, s.createAPIKey)
+	g.Post("/api-keys/:id", s.originCheck, s.csrf, s.updateAPIKey)
+	g.Post("/api-keys/:id/revoke", s.originCheck, s.csrf, s.revokeAPIKey)
+
+	g.Get("/webhooks", s.webhooksPage)
+	g.Post("/webhooks", s.originCheck, s.csrf, s.createWebhook)
+	g.Get("/webhooks/:id", s.webhookPage)
+	g.Post("/webhooks/:id", s.originCheck, s.csrf, s.updateWebhook)
+	g.Post("/webhooks/:id/test", s.originCheck, s.csrf, s.testWebhook)
+	g.Post("/webhooks/:id/rotate", s.originCheck, s.csrf, s.rotateWebhookSecret)
+	g.Post("/webhooks/:id/secret", s.originCheck, s.csrf, s.revealWebhookSecret)
+	g.Post("/webhooks/:id/delete", s.originCheck, s.csrf, s.deleteWebhook)
+	g.Post("/webhooks/:id/deliveries/:delivery/retry", s.originCheck, s.csrf, s.retryDelivery)
+
+	g.Get("/emails", s.emailsPage)
+	g.Get("/emails/:name", s.emailPage)
+	g.Post("/emails/:name", s.originCheck, s.csrf, s.saveEmail)
+	g.Post("/emails/:name/reset", s.originCheck, s.csrf, s.resetEmail)
+	g.Get("/emails/:name/preview", s.previewEmail)
+	g.Post("/emails/:name/preview", s.originCheck, s.csrf, s.previewEmail)
+	g.Post("/emails/:name/test", s.originCheck, s.csrf, s.testEmail)
+
+	g.Get("/docs", s.docsPage)
+	g.Get("/openapi.yaml", s.openAPI)
 }
 
 // ---------------------------------------------------------------------------
@@ -202,7 +249,15 @@ var funcs = template.FuncMap{
 		b, _ := json.Marshal(v)
 		return string(b)
 	},
-	"add":          func(a, b int) int { return a + b },
+	"add":   func(a, b int) int { return a + b },
+	"deref": func(t *time.Time) time.Time { return *t },
+	"dict": func(kv ...any) map[string]any {
+		m := map[string]any{}
+		for i := 0; i+1 < len(kv); i += 2 {
+			m[kv[i].(string)] = kv[i+1]
+		}
+		return m
+	},
 	"providerIcon": providerIcon,
 	"sub":          func(a, b int) int { return a - b },
 }
@@ -226,10 +281,10 @@ func (s *Server) parseTemplates() error {
 	}
 	for _, e := range entries {
 		name := strings.TrimSuffix(strings.TrimPrefix(e, "templates/"), ".html")
-		if name == "layout" {
+		if name == "layout" || strings.HasPrefix(name, "_") {
 			continue
 		}
-		t, err := template.New(name).Funcs(funcs).ParseFS(assets, "templates/layout.html", e)
+		t, err := template.New(name).Funcs(funcs).ParseFS(assets, "templates/layout.html", "templates/_partials.html", e)
 		if err != nil {
 			return err
 		}
@@ -266,16 +321,24 @@ func (s *Server) render(c fiber.Ctx, status int, page, nav, title string, data a
 }
 
 var flashes = map[string]string{
-	"saved":     "Settings saved and applied.",
-	"reset":     "Admin override removed. The provider now uses environment settings.",
-	"disabled":  "User disabled and signed out everywhere.",
-	"enabled":   "User enabled.",
-	"revoked":   "All sessions revoked.",
-	"roles":     "Roles updated. They apply on the user's next token refresh.",
-	"rotated":   "Signing key rotated. Previous key stays published until its tokens expire.",
-	"signedout": "Signed out.",
-	"settings":  "Settings saved. They apply to every replica within 15 seconds.",
-	"envreset":  "Admin overrides removed. Environment values apply again.",
+	"saved":          "Settings saved and applied.",
+	"reset":          "Admin override removed. The provider now uses environment settings.",
+	"disabled":       "User disabled and signed out everywhere.",
+	"enabled":        "User enabled.",
+	"revoked":        "All sessions revoked.",
+	"roles":          "Roles updated. They apply on the user's next token refresh.",
+	"rotated":        "Signing key rotated. Previous key stays published until its tokens expire.",
+	"signedout":      "Signed out.",
+	"keysaved":       "API key updated.",
+	"keyrevoked":     "API key revoked. Requests using it are rejected immediately.",
+	"webhooktest":    "Test event queued. It appears in the deliveries below within a few seconds.",
+	"webhookdeleted": "Webhook deleted.",
+	"retry":          "Delivery queued for another attempt.",
+	"emailsaved":     "Template saved. New emails use it within 15 seconds on every replica.",
+	"emailreset":     "Template reset to the built-in version.",
+	"emailtest":      "Test email sent.",
+	"settings":       "Settings saved. They apply to every replica within 15 seconds.",
+	"envreset":       "Admin overrides removed. Environment values apply again.",
 }
 
 func (s *Server) errorHandler(c fiber.Ctx, err error) error {

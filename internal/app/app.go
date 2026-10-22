@@ -15,6 +15,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/fatihacan1/warden/internal/apikeys"
 	"github.com/fatihacan1/warden/internal/auth"
 	"github.com/fatihacan1/warden/internal/avatar"
 	"github.com/fatihacan1/warden/internal/config"
@@ -35,6 +36,7 @@ import (
 	"github.com/fatihacan1/warden/internal/transport/admin"
 	"github.com/fatihacan1/warden/internal/transport/grpcapi"
 	"github.com/fatihacan1/warden/internal/transport/httpapi"
+	"github.com/fatihacan1/warden/internal/webhooks"
 )
 
 // App is a fully wired Warden instance.
@@ -57,6 +59,10 @@ type App struct {
 	Objects   objectstore.Store
 	Box       *secretbox.Box
 	Settings  *settings.Manager
+	APIKeys   *apikeys.Manager
+	Webhooks  *webhooks.Manager
+	Mail      *mailer.Library
+	Renderer  *mailer.Renderer
 
 	flushSentry func()
 }
@@ -73,11 +79,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 		log.Info("sentry enabled")
 	}
 
-	key, err := cfg.EncryptionKeyBytes()
-	if err != nil {
-		return nil, err
-	}
-	box, err := secretbox.New(key)
+	box, err := cfg.SecretBox()
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +106,19 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 		// Invalid or unreadable admin settings must not take the service down:
 		// keep the environment defaults and surface the problem loudly.
 		log.Error("runtime settings not applied, using environment defaults", "err", err)
+	}
+
+	a.APIKeys = apikeys.NewManager(a.Store, cfg.IsProduction(), log)
+	if err := a.APIKeys.Reload(cctx); err != nil {
+		a.Close()
+		return nil, err
+	}
+	a.Webhooks = webhooks.NewManager(a.Store, box, log, webhooks.Options{
+		Production: cfg.IsProduction(), AllowPrivate: cfg.WebhookPrivateNetworks(), Timeout: cfg.Webhook.Timeout,
+	})
+	if err := a.Webhooks.Reload(cctx); err != nil {
+		a.Close()
+		return nil, err
 	}
 
 	a.Keys = token.NewKeyManager(a.Store, box, cfg.Token.KeyRotationInterval, cfg.Token.AccessTTL, log)
@@ -138,11 +153,17 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 		a.Close()
 		return nil, err
 	}
+	a.Renderer = renderer
+	a.Mail = mailer.NewLibrary(a.Store, renderer, log)
+	if err := a.Mail.Reload(cctx); err != nil {
+		a.Close()
+		return nil, err
+	}
 	var sender mailer.Sender = mailer.NewLog(log)
 	if cfg.SMTP.Host != "" {
 		sender = mailer.NewSMTP(cfg.SMTP)
 	}
-	a.Relay = events.NewRelay(a.Store, publisher, sender, renderer, box, log, a.Metrics)
+	a.Relay = events.NewRelay(a.Store, publisher, sender, renderer, box, log, a.Metrics).WithWebhooks(a.Webhooks)
 
 	a.OAuth = oauth.NewRegistry(cfg.OAuth, cfg.HTTP.PublicURL, a.Store, box, oauth.NewHTTPClient(), log)
 	if err := a.OAuth.Reload(cctx); err != nil {
@@ -161,19 +182,23 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 
 	a.Auth = auth.New(auth.Deps{
 		Config: cfg, Store: a.Store, Redis: a.Redis, Hasher: hasher, Breach: breach, Tokens: a.Tokens,
-		Events: events.NewWriter(box, publisher != nil), Lockout: lockout, Box: box, OAuth: a.OAuth,
+		Events: events.NewWriter(box, publisher != nil, a.Webhooks), Lockout: lockout, Box: box, OAuth: a.OAuth,
 		Flow: oauth.NewFlow(a.Redis), Objects: a.Objects, Avatars: avatar.NewProcessor(), Metrics: a.Metrics, Log: log,
 		Settings: a.Settings,
 	})
 
 	ready := a.readiness
-	a.HTTP = httpapi.New(httpapi.Deps{
+	if a.HTTP, err = httpapi.New(httpapi.Deps{
 		Config: cfg, Auth: a.Auth, Tokens: a.Tokens, Keys: a.Keys, OAuth: a.OAuth,
-		Limiter: limiter, Metrics: a.Metrics, Log: log, Ready: ready, Settings: a.Settings,
-	})
+		Limiter: limiter, Metrics: a.Metrics, Log: log, Ready: ready, Settings: a.Settings, APIKeys: a.APIKeys,
+	}); err != nil {
+		a.Close()
+		return nil, err
+	}
 	if a.Admin, err = admin.New(admin.Deps{
 		Config: cfg, Auth: a.Auth, Store: a.Store, Redis: a.Redis, OAuth: a.OAuth, Keys: a.Keys,
 		Limiter: limiter, Metrics: a.Metrics, Log: log, Ready: ready, Events: publisher != nil, Settings: a.Settings,
+		APIKeys: a.APIKeys, Webhooks: a.Webhooks, Mail: a.Mail, Renderer: renderer, Sender: sender,
 	}); err != nil {
 		a.Close()
 		return nil, err
@@ -225,6 +250,9 @@ func (a *App) Run(ctx context.Context) error {
 	go a.Keys.Run(workers, 30*time.Second)
 	go a.OAuth.Run(workers, 30*time.Second)
 	go a.Settings.Run(workers, 15*time.Second)
+	go a.APIKeys.Run(workers, 15*time.Second)
+	go a.Webhooks.Run(workers, 15*time.Second)
+	go a.Mail.Run(workers, 15*time.Second)
 	go a.Relay.Run(workers)
 	go a.cleanupLoop(workers)
 

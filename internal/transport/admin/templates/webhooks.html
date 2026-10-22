@@ -1,0 +1,75 @@
+{{define "content"}}{{$csrf := .CSRF}}{{with .Data}}
+<div class="head">
+  <div>
+    <h1>Webhooks</h1>
+    <p class="lede">Warden posts an event to your endpoints when a user is created, updated, signs in and more. Each endpoint retries on its own with backoff for about five hours.</p>
+  </div>
+</div>
+
+<div class="grid grid-main">
+  <div class="stack">
+    <section class="panel">
+      <header><h2>Endpoints</h2></header>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>URL</th><th>Events</th><th>Status</th></tr></thead>
+          <tbody>
+          {{range .Webhooks}}
+            <tr>
+              <td><a href="/admin/webhooks/{{.ID}}" class="mono">{{.URL}}</a>{{if .Description}}<br><span class="muted small">{{.Description}}</span>{{end}}</td>
+              <td>{{if .Events}}{{len .Events}} selected{{else}}All events{{end}}</td>
+              <td>{{if .Enabled}}<span class="tag tag-ok">Active</span>{{else}}<span class="tag">Paused</span>{{end}}</td>
+            </tr>
+          {{else}}
+            <tr><td colspan="3" class="muted">No endpoints yet.</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header><h2>What your endpoint receives</h2></header>
+      <div class="panel-body">
+<pre>POST /webhooks/warden HTTP/1.1
+Content-Type: application/json
+webhook-id: 01929b7e-5f0c-7d3a-9c1e-6a0d1b2c3d4e
+webhook-timestamp: 1761127200
+webhook-signature: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
+
+{
+  "id": "01929b7e-5f0c-7d3a-9c1e-6a0d1b2c3d4e",
+  "type": "user.created",
+  "occurred_at": "2026-10-22T10:00:00Z",
+  "user_id": "01929b7e-1111-7aaa-8bbb-0123456789ab",
+  "data": { "email": "ada@example.com", "method": "password" }
+}</pre>
+        <ol class="steps">
+          <li>Verify the signature with your endpoint's secret before trusting the body. It follows <a href="https://www.standardwebhooks.com" target="_blank" rel="noopener noreferrer">Standard Webhooks</a>, so libraries exist for every language; the Warden SDK has <code>verifyWebhook()</code>.</li>
+          <li>Reject timestamps older than 5 minutes (replays) and answer <code>2xx</code> quickly; do slow work in the background.</li>
+          <li>Deliveries are at-least-once. Deduplicate on <code>id</code>, which is also the RabbitMQ message id of the same event.</li>
+          <li>Answer <code>410 Gone</code> to stop receiving an event permanently. Any other non-2xx answer is retried with backoff.</li>
+        </ol>
+        {{if not .Private}}<p class="help mb-0">Private and loopback addresses are blocked (<code>WEBHOOK_ALLOW_PRIVATE_NETWORKS=false</code>), so webhooks cannot reach internal services.</p>{{end}}
+      </div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <header><h2>Add an endpoint</h2></header>
+    <form method="post" action="/admin/webhooks" class="panel-body">
+      <input type="hidden" name="_csrf" value="{{$csrf}}">
+      <div class="field">
+        <label for="wh-url">Endpoint URL</label>
+        <input id="wh-url" name="url" type="text" inputmode="url" spellcheck="false" placeholder="https://api.example.com/webhooks/warden" required>
+      </div>
+      <div class="field">
+        <label for="wh-desc">Description <span class="muted">(optional)</span></label>
+        <input id="wh-desc" name="description" type="text" maxlength="200" placeholder="Create profile in billing service">
+      </div>
+      {{template "eventpicker" dict "Events" .Events "Wanted" .Defaults "All" false}}
+      <button class="btn btn-primary" type="submit">Add endpoint</button>
+    </form>
+  </section>
+</div>
+{{end}}{{end}}

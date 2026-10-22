@@ -9,6 +9,14 @@ help: ## Show this help
 env: ## Create .env from .env.example (does not overwrite)
 	@test -f .env || cp .env.example .env
 
+.PHONY: setup
+setup: ## Open the setup wizard: test connections, generate secrets, write .env
+	go run ./cmd/warden setup
+
+.PHONY: monitoring
+monitoring: ## Start Prometheus (localhost:9092) and Grafana (localhost:3001) with the stack
+	docker compose --profile monitoring up -d --build
+
 .PHONY: up
 up: env ## Start the full stack (Warden + dependencies) in Docker
 	docker compose up -d --build

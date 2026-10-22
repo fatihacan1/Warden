@@ -1,0 +1,211 @@
+{{define "content"}}{{with .Data}}{{$pk := or .PK "pk_test_…"}}
+<div class="head">
+  <div>
+    <h1>API docs</h1>
+    <p class="lede">Working examples for this instance, then every endpoint. Values in the snippets (URLs, issuer, audience) are this instance's own.</p>
+  </div>
+  <div class="row">
+    <a class="btn" href="/admin/openapi.yaml" target="_blank" rel="noopener">View OpenAPI</a>
+    <a class="btn" href="/admin/openapi.yaml?download=1">Download</a>
+  </div>
+</div>
+
+<section class="panel callout">
+  <div class="panel-body">
+    <h2>Before you start</h2>
+    <ol class="steps mb-0">
+      <li>Install the SDK in your web, mobile or Node.js project: <code>npm install warden-auth</code>. Every example also shows the plain HTTP call, so any language works.</li>
+      <li>Create a <strong>publishable key</strong> for each app and a <strong>secret key</strong> for each backend on <a href="/admin/api-keys">API keys</a>. {{if .PK}}This instance already has <code>{{.PK}}</code>.{{end}}</li>
+      <li>Add your web app's origin to its publishable key (or to <a href="/admin/settings">Settings</a>) so browsers may call <code>{{.PublicURL}}</code>.</li>
+    </ol>
+  </div>
+</section>
+
+<h2 id="first-user" class="doc-h">Create the first user</h2>
+<p>From a backend or a one-off script, with a secret key. Unlike sign-up, this works even when sign-ups are off, and can assign roles, so it is how you create your first admin.</p>
+<div class="code-pair">
+<pre><span class="code-label">curl</span>curl -X POST {{.PublicURL}}/v1/server/users \
+  -H "Authorization: Bearer $WARDEN_SECRET_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"ada@example.com","password":"correct horse battery staple",
+       "name":"Ada","roles":["admin"],"email_verified":true}'</pre>
+<pre><span class="code-label">Node.js</span>import { createWardenServer } from "warden-auth/server";
+
+const warden = createWardenServer({
+  url: "{{.PublicURL}}",
+  secretKey: process.env.WARDEN_SECRET_KEY,
+});
+
+const ada = await warden.users.create({
+  email: "ada@example.com",
+  password: "correct horse battery staple",
+  name: "Ada",
+  roles: ["admin"],
+  emailVerified: true,
+});</pre>
+</div>
+
+<h2 id="sign-in" class="doc-h">Sign a user in</h2>
+<p>In the app. In browsers, cookie mode keeps the refresh token in an HttpOnly cookie; the SDK keeps the access token in memory and refreshes it before it expires.</p>
+<div class="code-pair">
+<pre><span class="code-label">curl</span>curl -X POST {{.PublicURL}}/v1/auth/signin \
+  -H "X-Warden-Key: {{$pk}}" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"ada@example.com","password":"correct horse battery staple"}'
+
+# → {"status":"authenticated","tokens":{"access_token":"…",
+#    "refresh_token":"…"},"user":{…}}
+# or {"status":"mfa_required","mfa_token":"…"}</pre>
+<pre><span class="code-label">Browser / React Native</span>import { createWarden } from "warden-auth";
+
+export const warden = createWarden({
+  url: "{{.PublicURL}}",
+  publishableKey: "{{$pk}}",
+  mode: "cookie", // "token" + secure storage on mobile
+});
+
+const res = await warden.signIn({ email, password });
+if (res.status === "mfa_required") {
+  await warden.verifyMfa({ mfaToken: res.mfaToken, code });
+}
+const user = warden.getSession()?.user;</pre>
+</div>
+
+<h2 id="profile" class="doc-h">Update the profile</h2>
+<div class="code-pair">
+<pre><span class="code-label">curl</span>curl -X PATCH {{.PublicURL}}/v1/me \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Ada Lovelace"}'</pre>
+<pre><span class="code-label">SDK</span>const user = await warden.user.update({ name: "Ada Lovelace" });
+
+// From a backend, for any user:
+await server.users.update(userId, { name: "Ada Lovelace" });</pre>
+</div>
+
+<h2 id="photo" class="doc-h">Upload a profile photo</h2>
+<p>JPEG, PNG, GIF or WebP up to the configured size. Warden decodes the image, strips metadata, resizes it and re-encodes it as JPEG before storing it in S3.</p>
+<div class="code-pair">
+<pre><span class="code-label">curl</span>curl -X PUT {{.PublicURL}}/v1/me/avatar \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -F "file=@photo.jpg"
+
+# → user with "avatar_url"
+curl -X DELETE {{.PublicURL}}/v1/me/avatar \
+  -H "Authorization: Bearer $ACCESS_TOKEN"</pre>
+<pre><span class="code-label">SDK</span>// &lt;input type="file" accept="image/*"&gt;
+const file = input.files[0];
+const user = await warden.user.uploadAvatar(file);
+img.src = user.avatar_url;
+
+await warden.user.deleteAvatar();</pre>
+</div>
+
+<h2 id="roles" class="doc-h">Check a role in your API</h2>
+<p>Your API verifies the access token itself with the public keys, so no call to Warden is needed per request. Roles are in the token; change them with the server API or on the user's page.</p>
+<div class="code-pair">
+<pre><span class="code-label">Express</span>import { createWardenServer } from "warden-auth/server";
+
+const warden = createWardenServer({
+  url: "{{.PublicURL}}",
+  issuer: "{{.Issuer}}",
+  audience: "{{.Audience}}",
+});
+
+app.get("/admin/reports",
+  warden.express({ roles: ["admin"] }),
+  (req, res) =&gt; res.json({ hello: req.auth.userId }));
+
+// Anywhere else:
+const claims = await warden.verifyToken(token);
+if (!claims.roles.includes("admin")) { /* 403 */ }</pre>
+<pre><span class="code-label">curl (online check)</span># For sensitive actions: also rejects revoked sessions
+# and returns the user's current roles.
+curl -X POST {{.PublicURL}}/v1/server/tokens/verify \
+  -H "Authorization: Bearer $WARDEN_SECRET_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"token":"'$ACCESS_TOKEN'","check_session":true}'
+
+# → {"active":true,"user_id":"…","roles":["admin"],…}
+
+# Give someone a role:
+curl -X PATCH {{.PublicURL}}/v1/server/users/$USER_ID \
+  -H "Authorization: Bearer $WARDEN_SECRET_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"roles":["admin","billing"]}'</pre>
+</div>
+
+<h2 id="sessions" class="doc-h">Devices and sign-out</h2>
+<div class="code-pair">
+<pre><span class="code-label">curl</span>curl {{.PublicURL}}/v1/me/sessions -H "Authorization: Bearer $ACCESS_TOKEN"
+curl -X DELETE {{.PublicURL}}/v1/me/sessions/$SESSION_ID -H "Authorization: Bearer $ACCESS_TOKEN"
+curl -X DELETE {{.PublicURL}}/v1/me/sessions -H "Authorization: Bearer $ACCESS_TOKEN"</pre>
+<pre><span class="code-label">SDK</span>const sessions = await warden.sessions.list();
+await warden.sessions.revoke(sessions[1].id); // one device
+await warden.sessions.revokeOthers();         // all but this one
+await warden.signOut();                       // this device</pre>
+</div>
+
+<h2 id="webhooks" class="doc-h">React to new and updated users</h2>
+<p>Add an endpoint on <a href="/admin/webhooks">Webhooks</a> and verify each request with its signing secret.</p>
+<div class="code-pair">
+<pre><span class="code-label">Express</span>import { verifyWebhook } from "warden-auth/server";
+
+app.post("/webhooks/warden",
+  express.raw({ type: "application/json" }),
+  async (req, res) =&gt; {
+    const event = await verifyWebhook({
+      secret: process.env.WARDEN_WEBHOOK_SECRET,
+      headers: req.headers,
+      body: req.body, // raw bytes, not parsed JSON
+    });
+    if (event.type === "user.created") { /* … */ }
+    res.sendStatus(204);
+  });</pre>
+<pre><span class="code-label">Event</span>{
+  "id": "01929b7e-…",          // dedupe on this
+  "type": "user.updated",
+  "occurred_at": "2026-10-22T10:00:00Z",
+  "user_id": "01929b7e-…",
+  "data": { "fields": ["name"] }
+}</pre>
+</div>
+
+<h2 id="graphql" class="doc-h">GraphQL</h2>
+{{if .GraphQL}}
+<p><code>POST {{.PublicURL}}/graphql</code> serves the account API with an access token, plus <code>user</code> and <code>setUserRoles</code> for secret keys. Queries are limited in size and depth; introspection is off in production.</p>
+<div class="code-pair">
+<pre><span class="code-label">curl</span>curl -X POST {{.PublicURL}}/graphql \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{ me { id name roles } sessions { id current userAgent } }"}'</pre>
+<pre><span class="code-label">SDK</span>const { data } = await warden.graphql(`
+  mutation Rename($name: String!) {
+    updateProfile(name: $name) { id name }
+  }`, { name: "Ada" });</pre>
+</div>
+{{else}}
+<p class="muted">GraphQL is off. Set <code>GRAPHQL_ENABLED=true</code> and restart to serve <code>POST /graphql</code>.</p>
+{{end}}
+
+<h2 id="reference" class="doc-h">Endpoint reference</h2>
+<p>Generated from the OpenAPI document shipped with this build. Import it into Postman, Insomnia or an OpenAPI code generator for clients in other languages.</p>
+{{range .Reference}}
+<section class="panel ref-group">
+  <header><h3 class="mb-0">{{.Tag}}</h3>{{if .Description}}<span class="muted small">{{.Description}}</span>{{end}}</header>
+  <div class="table-wrap">
+    <table class="ref">
+      <tbody>
+      {{range .Ops}}
+        <tr>
+          <td class="ref-method"><span class="method method-{{.Method}}">{{.Method}}</span></td>
+          <td><code class="break">{{.Path}}</code><br><span class="small">{{.Summary}}</span>{{if .Detail}}<br><span class="muted small">{{.Detail}}</span>{{end}}</td>
+          <td class="hide-sm small muted">{{.Auth}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}
+{{end}}{{end}}

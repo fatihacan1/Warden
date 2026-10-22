@@ -1,6 +1,5 @@
-{{define "mfa_changed.txt"}}Two-factor authentication {{.Data.Action}}
+Two-factor authentication {{.Data.Action}}
 
 Two-factor authentication was {{.Data.Action}} for your {{.AppName}} account on {{.Data.When}}.
 
 If you did not make this change, reset your password immediately and contact support.
-{{end}}

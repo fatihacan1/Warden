@@ -12,6 +12,11 @@ info:
 
     Browser apps can send `X-Auth-Mode: cookie` to receive the refresh token as
     an HttpOnly cookie instead of in the response body.
+
+    Apps identify themselves with a publishable key in `X-Warden-Key`
+    (required when the instance enforces it). Backends call the server API
+    (`/v1/server`) with a secret key; never ship a secret key to a browser or
+    a phone.
   license:
     name: MIT
     identifier: MIT
@@ -21,10 +26,19 @@ servers:
 
 tags:
   - name: Auth
+    description: Email and password sign-in, tokens
   - name: OAuth
+    description: Social sign-in
   - name: Account
+    description: The signed-in user
   - name: MFA
+    description: Two-factor authentication
+  - name: Server
+    description: For your backends, with a secret key
+  - name: GraphQL
+    description: Optional, when GRAPHQL_ENABLED=true
   - name: Discovery
+    description: Keys and health
 
 paths:
   /v1/auth/providers:
@@ -553,6 +567,155 @@ paths:
                 properties:
                   recovery_codes: { type: array, items: { type: string } }
 
+  /v1/server/users:
+    post:
+      tags: [Server]
+      summary: Create a user
+      description: Works even when self-service sign-up is off. Password is optional; roles and a verified email can be set directly.
+      operationId: serverCreateUser
+      security: [{ secretKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+                name: { type: string, maxLength: 100 }
+                roles: { type: array, items: { type: string, pattern: "^[a-z][a-z0-9_:.-]{0,63}$" }, maxItems: 32 }
+                email_verified: { type: boolean, default: false }
+      responses:
+        "201":
+          description: Created user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServerUser" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+    get:
+      tags: [Server]
+      summary: Find a user by email
+      operationId: serverFindUser
+      security: [{ secretKey: [] }]
+      parameters:
+        - { name: email, in: query, required: true, schema: { type: string, format: email } }
+      responses:
+        "200":
+          description: User
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServerUser" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /v1/server/users/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Server]
+      summary: Get a user
+      operationId: serverGetUser
+      security: [{ secretKey: [] }]
+      responses:
+        "200":
+          description: User
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServerUser" }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Server]
+      summary: Update name, roles or disabled state
+      description: Roles appear in the user's next access token. Disabling signs the user out everywhere.
+      operationId: serverUpdateUser
+      security: [{ secretKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 100 }
+                roles: { type: array, items: { type: string } }
+                disabled: { type: boolean }
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServerUser" }
+
+  /v1/server/users/{id}/sessions:
+    delete:
+      tags: [Server]
+      summary: Sign a user out everywhere
+      operationId: serverRevokeSessions
+      security: [{ secretKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Number of sessions revoked
+          content:
+            application/json:
+              schema: { type: object, properties: { revoked: { type: integer } } }
+
+  /v1/server/tokens/verify:
+    post:
+      tags: [Server]
+      summary: Introspect an access token
+      description: Signature, expiry and revocation check. With check_session the session and user are loaded from the database and the current roles are returned.
+      operationId: serverVerifyToken
+      security: [{ secretKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+                check_session: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Introspection result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Introspection" }
+
+  /graphql:
+    post:
+      tags: [GraphQL]
+      summary: GraphQL endpoint
+      description: Account queries and mutations with an access token; user and setUserRoles with a secret key. One operation per request, bounded depth and size, introspection off in production.
+      operationId: graphql
+      security: [{ bearer: [] }, { secretKey: [] }, {}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: { type: string }
+                operationName: { type: string }
+                variables: { type: object }
+      responses:
+        "200":
+          description: GraphQL response (errors carry extensions.code)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object }
+                  errors: { type: array, items: { type: object } }
+
   /.well-known/jwks.json:
     get:
       tags: [Discovery]
@@ -607,6 +770,16 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: Access token from sign-in or refresh.
+    secretKey:
+      type: http
+      scheme: bearer
+      description: Secret key (sk_live_... / sk_test_...) from the admin UI. Server to server only; requests with a browser Origin header are rejected.
+    publishableKey:
+      type: apiKey
+      in: header
+      name: X-Warden-Key
+      description: Publishable key (pk_live_... / pk_test_...) identifying the calling app. Required when the instance enforces it.
 
   parameters:
     AuthMode:
@@ -718,6 +891,43 @@ components:
         last_used_at: { type: string, format: date-time }
         expires_at: { type: string, format: date-time }
 
+    ServerUser:
+      allOf:
+        - { $ref: "#/components/schemas/User" }
+        - type: object
+          properties:
+            disabled: { type: boolean }
+            updated_at: { type: string, format: date-time }
+
+    Introspection:
+      type: object
+      required: [active]
+      properties:
+        active: { type: boolean }
+        reason: { type: string, enum: [invalid_token, session_revoked, user_disabled] }
+        user_id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        email: { type: string }
+        email_verified: { type: boolean }
+        roles: { type: array, items: { type: string } }
+        amr: { type: array, items: { type: string } }
+        expires_at: { type: string, format: date-time }
+
+    Event:
+      type: object
+      description: Body of every webhook request and RabbitMQ message. Deduplicate on id.
+      required: [id, type, occurred_at]
+      properties:
+        id: { type: string, format: uuid }
+        type:
+          type: string
+          enum: [user.created, user.updated, user.deleted, user.email_verified, user.password_changed, user.signed_in,
+                 user.disabled, user.enabled, user.mfa_enabled, user.mfa_disabled, identity.linked, identity.unlinked,
+                 session.revoked, webhook.test]
+        occurred_at: { type: string, format: date-time }
+        user_id: { type: string, format: uuid }
+        data: { type: object }
+
     Providers:
       type: object
       properties:
@@ -737,3 +947,21 @@ components:
 
 security:
   - bearer: []
+
+webhooks:
+  event:
+    post:
+      summary: Event delivered to a webhook endpoint
+      description: |
+        Signed per Standard Webhooks: webhook-signature is "v1," + base64(HMAC-SHA256(secret, id + "." + timestamp + "." + body)),
+        where secret is the base64 part after "whsec_". Reject timestamps older than 5 minutes. Answer 2xx; 410 stops deliveries.
+      parameters:
+        - { name: webhook-id, in: header, required: true, schema: { type: string } }
+        - { name: webhook-timestamp, in: header, required: true, schema: { type: integer } }
+        - { name: webhook-signature, in: header, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Event" }
+      responses:
+        "204": { description: Received }

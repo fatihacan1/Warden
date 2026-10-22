@@ -1,0 +1,106 @@
+{{define "content"}}{{$csrf := .CSRF}}{{with .Data}}{{$w := .W}}
+<p class="crumb"><a href="/admin/webhooks">Webhooks</a></p>
+<div class="head">
+  <div>
+    <h1 class="mono break">{{$w.URL}}</h1>
+    <p class="lede">{{if $w.Description}}{{$w.Description}}{{else}}Created {{date $w.CreatedAt}}{{end}}</p>
+  </div>
+  <div class="row">
+    {{if $w.Enabled}}<span class="tag tag-ok">Active</span>{{else}}<span class="tag">Paused</span>{{end}}
+    <form method="post" action="/admin/webhooks/{{$w.ID}}/test" class="inline-form">
+      <input type="hidden" name="_csrf" value="{{$csrf}}">
+      <button class="btn" type="submit"{{if not $w.Enabled}} disabled{{end}}>Send test event</button>
+    </form>
+  </div>
+</div>
+
+{{with .Reveal}}
+<section class="panel reveal" aria-live="polite">
+  <div class="panel-body">
+    <h2>Signing secret</h2>
+    <p>Store it in your receiver's environment and verify every request with it.</p>
+    <div class="copy"><code>{{.Secret}}</code><button type="button" class="btn btn-small" data-copy="{{.Secret}}">Copy</button></div>
+  </div>
+</section>
+{{end}}
+
+<div class="grid grid-main">
+  <section class="panel">
+    <header><h2>Recent deliveries</h2></header>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Event</th><th>Status</th><th class="hide-sm">Attempts</th><th>Queued</th><th></th></tr></thead>
+        <tbody>
+        {{range .Deliveries}}
+          <tr>
+            <td class="mono">{{.Type}}<br><span class="muted small">{{.EventID}}</span></td>
+            <td>
+              {{if eq .Status "delivered"}}<span class="tag tag-ok">Delivered</span>
+              {{else if eq .Status "failed"}}<span class="tag tag-err">Failed</span>
+              {{else if eq .Status "retrying"}}<span class="tag tag-warn">Retrying</span>
+              {{else}}<span class="tag">Pending</span>{{end}}
+              {{if .LastError}}<br><span class="muted small break">{{.LastError}}</span>{{end}}
+            </td>
+            <td class="hide-sm num">{{.Attempts}}</td>
+            <td class="num">{{ago .CreatedAt}}</td>
+            <td>
+              {{if or (eq .Status "failed") (eq .Status "retrying")}}
+              <form method="post" action="/admin/webhooks/{{$w.ID}}/deliveries/{{.ID}}/retry" class="inline-form">
+                <input type="hidden" name="_csrf" value="{{$csrf}}">
+                <button class="btn btn-small" type="submit">Retry now</button>
+              </form>
+              {{end}}
+            </td>
+          </tr>
+        {{else}}
+          <tr><td colspan="5" class="muted">Nothing delivered yet. Send a test event to try your endpoint.</td></tr>
+        {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="stack">
+    <section class="panel">
+      <header><h2>Settings</h2></header>
+      <form method="post" action="/admin/webhooks/{{$w.ID}}" class="panel-body">
+        <input type="hidden" name="_csrf" value="{{$csrf}}">
+        <div class="field">
+          <label for="wh-url">Endpoint URL</label>
+          <input id="wh-url" name="url" type="text" inputmode="url" spellcheck="false" value="{{$w.URL}}" required>
+        </div>
+        <div class="field">
+          <label for="wh-desc">Description</label>
+          <input id="wh-desc" name="description" type="text" maxlength="200" value="{{$w.Description}}">
+        </div>
+        {{template "eventpicker" dict "Events" .Events "Wanted" .Wanted "All" (not $w.Events)}}
+        <div class="field">
+          <label class="switch"><input type="checkbox" name="enabled" {{if $w.Enabled}}checked{{end}}> Deliver events</label>
+        </div>
+        <button class="btn btn-primary" type="submit">Save</button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <header><h2>Signing secret</h2></header>
+      <div class="panel-body">
+        <p class="help">Used to sign every request (HMAC-SHA256). Rotating it takes effect immediately; update your receiver first or accept both secrets for a moment.</p>
+        <div class="row">
+          <form method="post" action="/admin/webhooks/{{$w.ID}}/secret" class="inline-form">
+            <input type="hidden" name="_csrf" value="{{$csrf}}">
+            <button class="btn btn-small" type="submit">Show secret</button>
+          </form>
+          <form method="post" action="/admin/webhooks/{{$w.ID}}/rotate" class="inline-form" data-confirm="Rotate the signing secret? Requests signed with the old one stop verifying.">
+            <input type="hidden" name="_csrf" value="{{$csrf}}">
+            <button class="btn btn-small" type="submit">Rotate</button>
+          </form>
+        </div>
+      </div>
+      <form method="post" action="/admin/webhooks/{{$w.ID}}/delete" class="panel-body sep-top" data-confirm="Delete this endpoint and its queued deliveries?">
+        <input type="hidden" name="_csrf" value="{{$csrf}}">
+        <button class="btn btn-danger btn-small" type="submit">Delete endpoint</button>
+      </form>
+    </section>
+  </div>
+</div>
+{{end}}{{end}}

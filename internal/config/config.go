@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/caarlos0/env/v11"
+
+	"github.com/fatihacan1/warden/internal/crypto/secretbox"
 )
 
 // Config is the root configuration object.
@@ -27,6 +29,12 @@ type Config struct {
 	// EncryptionKey is a base64 encoded 32 byte key used to encrypt secrets at
 	// rest (signing keys, TOTP secrets, provider credentials, queued emails).
 	EncryptionKey string `env:"ENCRYPTION_KEY,required"`
+	// EncryptionAlgorithm is used for new ciphertexts: aes-256-gcm (default)
+	// or xchacha20-poly1305. Existing data stays readable after a change.
+	EncryptionAlgorithm string `env:"ENCRYPTION_ALGORITHM" envDefault:"aes-256-gcm"`
+	// EncryptionPreviousKeys are retired keys, kept only to decrypt data sealed
+	// before a rotation. Run `warden reencrypt`, then remove them.
+	EncryptionPreviousKeys []string `env:"ENCRYPTION_PREVIOUS_KEYS" envSeparator:","`
 
 	HTTP      HTTPConfig      `envPrefix:"HTTP_"`
 	Admin     AdminConfig     `envPrefix:"ADMIN_"`
@@ -42,6 +50,8 @@ type Config struct {
 	RateLimit RateLimitConfig `envPrefix:"RATE_LIMIT_"`
 	OAuth     OAuthConfig     `envPrefix:"OAUTH_"`
 	Sentry    SentryConfig    `envPrefix:"SENTRY_"`
+	Webhook   WebhookConfig   `envPrefix:"WEBHOOK_"`
+	GraphQL   GraphQLConfig   `envPrefix:"GRAPHQL_"`
 }
 
 type HTTPConfig struct {
@@ -168,6 +178,9 @@ type AuthConfig struct {
 	LockoutWindow       time.Duration `env:"LOCKOUT_WINDOW" envDefault:"15m"`
 	RecentAuthWindow    time.Duration `env:"RECENT_AUTH_WINDOW" envDefault:"15m"`
 	AuditRetention      time.Duration `env:"AUDIT_RETENTION" envDefault:"2160h"`
+	// RequirePublishableKey rejects public API calls that do not carry a
+	// publishable key (X-Warden-Key). Editable in the admin UI.
+	RequirePublishableKey bool `env:"REQUIRE_PUBLISHABLE_KEY" envDefault:"false"`
 }
 
 type PasswordConfig struct {
@@ -218,9 +231,41 @@ type SentryConfig struct {
 	TracesSampleRate float64 `env:"TRACES_SAMPLE_RATE" envDefault:"0"`
 }
 
+type WebhookConfig struct {
+	// AllowPrivateNetworks lets webhooks call loopback and private addresses:
+	// "true", "false" or empty (= allowed except in production). Keeping it
+	// off in production stops webhooks from being used to reach internal
+	// services (SSRF).
+	AllowPrivateNetworks string        `env:"ALLOW_PRIVATE_NETWORKS"`
+	Timeout              time.Duration `env:"TIMEOUT" envDefault:"10s"`
+}
+
+type GraphQLConfig struct {
+	Enabled bool `env:"ENABLED" envDefault:"false"`
+	// Introspection: "true", "false" or empty (= on except in production).
+	Introspection string `env:"INTROSPECTION"`
+	MaxDepth      int    `env:"MAX_DEPTH" envDefault:"8"`
+	// MaxQueryLength bounds the query document in bytes.
+	MaxQueryLength int `env:"MAX_QUERY_LENGTH" envDefault:"8192"`
+}
+
 // Load parses the configuration from the environment and validates it.
 func Load() (*Config, error) {
 	cfg, err := env.ParseAs[Config]()
+	if err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
+	cfg.normalize()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+// LoadFrom parses and validates configuration from a map instead of the
+// process environment (the setup wizard checks a .env before writing it).
+func LoadFrom(vars map[string]string) (*Config, error) {
+	cfg, err := env.ParseAsWithOptions[Config](env.Options{Environment: vars})
 	if err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}
@@ -251,19 +296,78 @@ func (c *Config) AdminCookieSecure() bool {
 	}
 }
 
+// WebhookPrivateNetworks reports whether webhooks may target private IPs.
+func (c *Config) WebhookPrivateNetworks() bool {
+	return boolOr(c.Webhook.AllowPrivateNetworks, !c.IsProduction())
+}
+
+// GraphQLIntrospection reports whether the GraphQL schema can be introspected.
+func (c *Config) GraphQLIntrospection() bool {
+	return boolOr(c.GraphQL.Introspection, !c.IsProduction())
+}
+
+func boolOr(v string, def bool) bool {
+	switch strings.ToLower(v) {
+	case "true", "1", "yes":
+		return true
+	case "false", "0", "no":
+		return false
+	}
+	return def
+}
+
 // IsProduction reports whether the service runs with production hardening.
 func (c *Config) IsProduction() bool { return c.Env == "production" }
 
 // EncryptionKeyBytes decodes ENCRYPTION_KEY.
 func (c *Config) EncryptionKeyBytes() ([]byte, error) {
-	key, err := base64.StdEncoding.DecodeString(c.EncryptionKey)
-	if err != nil {
-		key, err = base64.RawURLEncoding.DecodeString(c.EncryptionKey)
-	}
-	if err != nil || len(key) != 32 {
+	key, ok := DecodeKey(c.EncryptionKey)
+	if !ok {
 		return nil, errors.New("ENCRYPTION_KEY must be 32 random bytes, base64 encoded (generate with: warden keygen)")
 	}
 	return key, nil
+}
+
+// PreviousEncryptionKeys decodes ENCRYPTION_PREVIOUS_KEYS.
+func (c *Config) PreviousEncryptionKeys() ([][]byte, error) {
+	var out [][]byte
+	for i, raw := range c.EncryptionPreviousKeys {
+		if raw = strings.TrimSpace(raw); raw == "" {
+			continue
+		}
+		key, ok := DecodeKey(raw)
+		if !ok {
+			return nil, fmt.Errorf("ENCRYPTION_PREVIOUS_KEYS entry %d must be 32 random bytes, base64 encoded", i+1)
+		}
+		out = append(out, key)
+	}
+	return out, nil
+}
+
+// SecretBox builds the encryption keyring from the configuration.
+func (c *Config) SecretBox() (*secretbox.Box, error) {
+	key, err := c.EncryptionKeyBytes()
+	if err != nil {
+		return nil, err
+	}
+	prev, err := c.PreviousEncryptionKeys()
+	if err != nil {
+		return nil, err
+	}
+	alg, err := secretbox.ParseAlgorithm(c.EncryptionAlgorithm)
+	if err != nil {
+		return nil, errors.New("ENCRYPTION_ALGORITHM must be aes-256-gcm or xchacha20-poly1305")
+	}
+	return secretbox.NewKeyring(alg, key, prev...)
+}
+
+// DecodeKey decodes a 32 byte key in standard or URL-safe base64.
+func DecodeKey(v string) ([]byte, bool) {
+	key, err := base64.StdEncoding.DecodeString(v)
+	if err != nil {
+		key, err = base64.RawURLEncoding.DecodeString(v)
+	}
+	return key, err == nil && len(key) == 32
 }
 
 // Validate rejects insecure or inconsistent configuration early, at startup.
@@ -276,7 +380,7 @@ func (c *Config) Validate() error {
 	default:
 		add("APP_ENV must be development, production or test")
 	}
-	if _, err := c.EncryptionKeyBytes(); err != nil {
+	if _, err := c.SecretBox(); err != nil {
 		errs = append(errs, err)
 	}
 	if c.IsProduction() {
@@ -427,6 +531,15 @@ func (c *Config) Validate() error {
 		if strings.EqualFold(o, "null") {
 			add("HTTP_CORS_ALLOWED_ORIGINS must not contain \"null\"")
 		}
+	}
+	if c.Webhook.Timeout < time.Second || c.Webhook.Timeout > time.Minute {
+		add("WEBHOOK_TIMEOUT must be between 1s and 1m")
+	}
+	if c.GraphQL.MaxDepth < 2 || c.GraphQL.MaxDepth > 32 {
+		add("GRAPHQL_MAX_DEPTH must be between 2 and 32")
+	}
+	if c.GraphQL.MaxQueryLength < 256 || c.GraphQL.MaxQueryLength > 64<<10 {
+		add("GRAPHQL_MAX_QUERY_LENGTH must be between 256 and 65536 bytes")
 	}
 	if c.Sentry.TracesSampleRate < 0 || c.Sentry.TracesSampleRate > 1 {
 		add("SENTRY_TRACES_SAMPLE_RATE must be between 0 and 1")

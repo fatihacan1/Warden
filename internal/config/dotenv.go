@@ -14,12 +14,32 @@ import (
 // variables (Docker, Kubernetes, CI) always take precedence. A missing file is
 // not an error.
 func LoadDotEnv(path string) error {
-	f, err := os.Open(path) // #nosec G304 -- path is chosen by the operator, not by request input
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
+	vars, order, err := ReadDotEnv(path)
 	if err != nil {
 		return err
+	}
+	for _, key := range order {
+		if _, exists := os.LookupEnv(key); exists {
+			continue
+		}
+		if err := os.Setenv(key, vars[key]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ReadDotEnv parses a .env file into a map and the order keys appear in. A
+// missing file returns an empty map.
+func ReadDotEnv(path string) (map[string]string, []string, error) {
+	vars := map[string]string{}
+	var order []string
+	f, err := os.Open(path) // #nosec G304 -- path is chosen by the operator, not by request input
+	if errors.Is(err, fs.ErrNotExist) {
+		return vars, nil, nil
+	}
+	if err != nil {
+		return nil, nil, err
 	}
 	defer f.Close()
 
@@ -33,18 +53,15 @@ func LoadDotEnv(path string) error {
 		line = strings.TrimPrefix(line, "export ")
 		key, value, ok := strings.Cut(line, "=")
 		if !ok {
-			return fmt.Errorf("%s:%d: expected KEY=VALUE", path, n)
+			return nil, nil, fmt.Errorf("%s:%d: expected KEY=VALUE", path, n)
 		}
 		key = strings.TrimSpace(key)
-		value = unquote(strings.TrimSpace(value))
-		if _, exists := os.LookupEnv(key); exists {
-			continue
+		if _, seen := vars[key]; !seen {
+			order = append(order, key)
 		}
-		if err := os.Setenv(key, value); err != nil {
-			return err
-		}
+		vars[key] = unquote(strings.TrimSpace(value))
 	}
-	return sc.Err()
+	return vars, order, sc.Err()
 }
 
 func unquote(v string) string {

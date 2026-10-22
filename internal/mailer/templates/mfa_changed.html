@@ -1,5 +1,5 @@
-{{define "mfa_changed.html"}}{{template "layout_start" .}}
+{{template "layout_start" .}}
 <h1 style="font-size:20px;margin:0 0 12px">Two-factor authentication {{.Data.Action}}</h1>
 <p style="margin:0 0 8px">Two-factor authentication was {{.Data.Action}} for your {{.AppName}} account on {{.Data.When}}.</p>
 <p style="margin:0;color:#55554f;font-size:13px">If you did not make this change, reset your password immediately and contact support.</p>
-{{template "layout_end" .}}{{end}}
+{{template "layout_end" .}}

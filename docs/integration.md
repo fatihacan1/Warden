@@ -3,12 +3,17 @@
 How to use a Warden instance from web apps, mobile apps and backend services. Examples assume Warden runs at `https://auth.example.com` with the default audience `warden`; the admin UI's **Integrate** page shows the exact values for your instance.
 
 - [Concepts](#concepts)
+- [JavaScript and TypeScript SDK](#javascript-and-typescript-sdk)
+- [API keys](#api-keys)
 - [Backend services: verifying tokens](#backend-services-verifying-tokens)
+- [Server API](#server-api)
 - [Web apps](#web-apps)
 - [Mobile apps](#mobile-apps)
 - [Social sign-in, step by step](#social-sign-in-step-by-step)
 - [Setting up identity providers](#setting-up-identity-providers)
+- [Webhooks](#webhooks)
 - [Consuming events](#consuming-events)
+- [GraphQL](#graphql)
 - [gRPC from other services](#grpc-from-other-services)
 - [Error handling](#error-handling)
 
@@ -23,6 +28,30 @@ Every refresh returns a **new** refresh token and invalidates the old one. If an
 
 1. Store the new refresh token from every refresh response.
 2. Never run two refreshes in parallel. Use one in-flight refresh promise that all requests wait on.
+
+## JavaScript and TypeScript SDK
+
+[`warden-auth`](https://www.npmjs.com/package/warden-auth) wraps everything below for browsers, React Native and Node.js: sign-in, MFA, single-flight token refresh, profile, photo upload, sessions, linked accounts, PKCE social sign-in, plus `warden-auth/server` for token verification, role checks, the server API and webhook signatures. Zero dependencies. Source and runnable example screens: [github.com/fatihacan1/warden-js](https://github.com/fatihacan1/warden-js).
+
+```bash
+npm install warden-auth
+```
+
+The admin UI's **API docs** page shows each example with your instance's URLs filled in.
+
+## API keys
+
+Create them on the admin UI's **API keys** page.
+
+| | Publishable key | Secret key |
+| --- | --- | --- |
+| Prefix | `pk_live_` / `pk_test_` | `sk_live_` / `sk_test_` |
+| Lives in | Web and mobile apps | Your backends' secret store |
+| Sent as | `X-Warden-Key` header (`client_key` query on `/authorize`) | `Authorization: Bearer` to `/v1/server/*` and `/graphql` |
+| Proves | Which app is calling; bound origins are enforced and added to CORS | That a trusted backend is calling |
+| If leaked | Harmless on its own: user data still needs a user's tokens | Revoke it immediately |
+
+A publishable key is not a password. Anything shipped to a browser or phone can be read, so Warden never trusts it with data; it lets you lock the API to your apps' origins, see which app is calling, and reject unknown clients once **Require a publishable key** is on. Secret keys are hashed at rest, rate limited per key, and rejected on any request that carries a browser `Origin` header so they cannot be used from a web page by mistake.
 
 ## Backend services: verifying tokens
 
@@ -108,6 +137,24 @@ Access tokens stay valid until they expire (15 minutes by default) even if the s
 ### Roles
 
 `roles` is a list of lowercase strings set through the admin UI or gRPC `SetUserRoles`. Compare exact values (`roles.includes("admin")`), never substrings. New roles appear in the next access token, so within one access token lifetime.
+
+## Server API
+
+Backends that need to manage users call `/v1/server` with a secret key:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/v1/server/users` | Create a user (email, optional password, name, roles, `email_verified`). Works when sign-ups are off: this is how you create the first admin |
+| GET | `/v1/server/users?email=` | Find a user by email |
+| GET, PATCH | `/v1/server/users/{id}` | Read; change name, roles or disabled state |
+| DELETE | `/v1/server/users/{id}/sessions` | Sign the user out everywhere |
+| POST | `/v1/server/tokens/verify` | Introspect an access token; `check_session: true` also checks revocation and returns current roles |
+
+```bash
+curl -X POST https://auth.example.com/v1/server/users \
+  -H "Authorization: Bearer $WARDEN_SECRET_KEY" -H "Content-Type: application/json" \
+  -d '{"email":"ada@example.com","password":"correct horse battery staple","roles":["admin"],"email_verified":true}'
+```
 
 ## Web apps
 
@@ -247,6 +294,37 @@ Open the admin UI, **Sign-in providers**. Each card shows the callback URL to re
 
 Providers can also be configured with `OAUTH_*` environment variables; settings saved in the admin UI take precedence.
 
+## Webhooks
+
+Add endpoints on the admin UI's **Webhooks** page and pick the events they receive (for example `user.created` and `user.updated`). Each event is POSTed as JSON, the same envelope as RabbitMQ, with three headers from the [Standard Webhooks](https://www.standardwebhooks.com) specification:
+
+```
+webhook-id: 0199f3c2-8a7e-7b1c-9d2e-4f5a6b7c8d9e
+webhook-timestamp: 1761128450
+webhook-signature: v1,<base64 HMAC-SHA256 of "id.timestamp.body">
+```
+
+Verify before trusting the body. With the SDK:
+
+```js
+import { verifyWebhook } from "warden-auth/server";
+
+app.post("/webhooks/warden", express.raw({ type: "application/json" }), async (req, res) => {
+  const event = await verifyWebhook({ secret: process.env.WARDEN_WEBHOOK_SECRET, headers: req.headers, body: req.body });
+  if (event.type === "user.created") await createProfile(event.user_id, event.data.email);
+  res.sendStatus(204);
+});
+```
+
+Any Standard Webhooks library works too (`standardwebhooks` for Node, Python, Go, Ruby, PHP, Java, Rust). Rules for receivers:
+
+- Use the raw body for verification, not re-serialized JSON.
+- Reject timestamps more than 5 minutes off; the SDK does.
+- Answer `2xx` quickly. Other answers are retried with exponential backoff for about five hours, then the delivery is marked failed; `410 Gone` stops it at once. Failed deliveries can be retried from the admin UI.
+- Deliveries are at-least-once and can arrive out of order: deduplicate on `id` and compare `occurred_at`.
+
+Every endpoint has its own queue: a slow receiver never delays another one or RabbitMQ. In production, webhook URLs must be `https://` and resolve to public addresses (private networks, loopback and cloud metadata addresses are blocked, also after DNS resolution).
+
 ## Consuming events
 
 When `RABBITMQ_URL` is set, Warden publishes to the topic exchange `warden.events` with the event type as routing key. Messages are persistent and published with confirms.
@@ -280,6 +358,17 @@ ch.consume(queue, async (msg) => {
 ```
 
 Events are written in the same database transaction as the change that caused them, so they are never lost and never published for a change that was rolled back. If RabbitMQ is down they wait in the outbox and are delivered when it returns.
+
+## GraphQL
+
+With `GRAPHQL_ENABLED=true`, `POST /graphql` serves the account API: `me`, `sessions`, `identities`, `providers`, and the mutations `updateProfile`, `revokeSession`, `revokeOtherSessions`, `unlinkIdentity`. With a secret key, `user(id)` and `setUserRoles` are available to backends. Sign-in, refresh and sign-out stay on REST, where cookies and token rotation are handled.
+
+```bash
+curl -X POST https://auth.example.com/graphql -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" -d '{"query":"{ me { id name roles } sessions { id current userAgent } }"}'
+```
+
+Protections: JSON POST only (no GET, no form posts, so no CSRF through simple requests), one operation per request (no batching), query length limit (`GRAPHQL_MAX_QUERY_LENGTH`), depth limit (`GRAPHQL_MAX_DEPTH`), bounded parallelism, fragment overlap limits, introspection off in production, per-IP rate limit, and errors reduced to Warden's codes in `extensions.code`.
 
 ## gRPC from other services
 
@@ -325,5 +414,7 @@ Branch on `code`, show `message` to users if you like (it never reveals whether 
 | `email_not_verified`, `account_disabled`, `signup_disabled` | 403 | Account state |
 | `reauthentication_required` | 403 | Social-only user must sign in again before a sensitive change |
 | `email_taken` | 409 | Email already registered |
+| `invalid_publishable_key`, `origin_not_allowed` | 401, 403 | Missing or unknown `X-Warden-Key`, or the key is used from an origin it is not bound to |
+| `invalid_secret_key`, `secret_key_in_browser` | 401, 403 | Server API called without a valid secret key, or from a browser |
 | `rate_limited` | 429 | Respect `Retry-After` |
 | `server_busy`, `service_unavailable` | 503 | Retry after `Retry-After` with backoff |

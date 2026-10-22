@@ -35,6 +35,7 @@ type Runtime struct {
 	ResetPasswordURL         string   `json:"reset_password_url"`
 	AllowedRedirectURIs      []string `json:"allowed_redirect_uris"`
 	CORSOrigins              []string `json:"cors_origins"`
+	RequirePublishableKey    bool     `json:"require_publishable_key"`
 }
 
 // Store persists the admin overrides.
@@ -73,6 +74,7 @@ func FromConfig(c *config.Config) Runtime {
 		ResetPasswordURL:         c.Auth.ResetPasswordURL,
 		AllowedRedirectURIs:      slices.Clone(c.Auth.AllowedRedirectURIs),
 		CORSOrigins:              slices.Clone(c.HTTP.CORSOrigins),
+		RequirePublishableKey:    c.Auth.RequirePublishableKey,
 	}
 }
 

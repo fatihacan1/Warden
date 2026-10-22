@@ -64,6 +64,10 @@ func (s *Server) overview(c fiber.Ctx) error {
 		{"S3 avatars", onOff(cfg.S3.Enabled), cfg.S3.Enabled},
 		{"SMTP delivery", map[bool]string{true: cfg.SMTP.Host, false: "Off (emails go to the log)"}[cfg.SMTP.Host != ""], cfg.SMTP.Host != ""},
 		{"Sentry", onOff(cfg.Sentry.DSN != ""), cfg.Sentry.DSN != ""},
+		{"GraphQL", onOff(cfg.GraphQL.Enabled), cfg.GraphQL.Enabled},
+		{"Webhooks", strconv.Itoa(len(s.Webhooks.List())) + " endpoint(s)", len(s.Webhooks.List()) > 0},
+		{"Publishable key required", onOff(rt.RequirePublishableKey), rt.RequirePublishableKey},
+		{"Encryption", s.Config.EncryptionAlgorithm, true},
 		{"Rate limiting", onOff(cfg.RateLimit.Enabled), cfg.RateLimit.Enabled},
 	}
 	recent, _ := s.Store.ListAudit(ctx, nil, 15)
@@ -269,13 +273,17 @@ func (s *Server) saveSettings(c fiber.Ctx) error {
 		ResetPasswordURL:         c.FormValue("reset_password_url"),
 		AllowedRedirectURIs:      lines(c.FormValue("allowed_redirect_uris")),
 		CORSOrigins:              lines(c.FormValue("cors_origins")),
+		RequirePublishableKey:    c.FormValue("require_publishable_key") == "on",
+	}
+	if r.RequirePublishableKey && !s.APIKeys.HasPublishable() {
+		return backErr(c, "/admin/settings", domain.ErrValidation.WithMessage("Create a publishable key on the API keys page before requiring one, or every app is locked out."))
 	}
 	if err := s.Settings.Save(c.Context(), r); err != nil {
 		return backErr(c, "/admin/settings", err)
 	}
 	s.audit(c, "admin.settings_saved", map[string]any{
 		"allow_signup": r.AllowSignup, "require_email_verification": r.RequireEmailVerification,
-		"check_breached_passwords": r.CheckBreachedPasswords,
+		"check_breached_passwords": r.CheckBreachedPasswords, "require_publishable_key": r.RequirePublishableKey,
 	})
 	return back(c, "/admin/settings", "settings")
 }

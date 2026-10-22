@@ -3,7 +3,7 @@
 ## Go-live checklist
 
 - [ ] `APP_ENV=production`, `LOG_FORMAT=json`
-- [ ] Fresh secrets from `warden keygen`: `ENCRYPTION_KEY`, `ADMIN_TOKEN`, `GRPC_API_KEYS`. Store them in your secret manager and **back up `ENCRYPTION_KEY`**: without it, signing keys, TOTP seeds and provider secrets cannot be decrypted.
+- [ ] Fresh secrets from `warden setup` or `warden keygen`: `ENCRYPTION_KEY`, `ADMIN_TOKEN`, `GRPC_API_KEYS`. Store them in your secret manager and **back up `ENCRYPTION_KEY`**: without it, signing keys, TOTP seeds and provider secrets cannot be decrypted.
 - [ ] `HTTP_PUBLIC_URL` is the public HTTPS URL; TLS terminates at your load balancer or ingress
 - [ ] `HTTP_TRUSTED_PROXIES` lists the load balancer's address ranges, and `HTTP_PROXY_HEADER` matches what it sends (`X-Forwarded-For`, or `CF-Connecting-IP` behind Cloudflare)
 - [ ] `HTTP_COOKIE_SECURE=true` (enforced)
@@ -12,6 +12,10 @@
 - [ ] `PASSWORD_CHECK_BREACHED=true` if the instance has outbound internet access
 - [ ] Redirect URIs and CORS origins list only your production apps
 - [ ] `GRPC_REFLECTION=false`
+- [ ] A publishable key per app (bound to its origins) and **Require a publishable key** turned on in Settings once every app sends one
+- [ ] Secret keys only in backend secret stores; one per service so each can be revoked alone
+- [ ] Webhook endpoints use `https://`; `WEBHOOK_ALLOW_PRIVATE_NETWORKS` stays unset (private targets blocked)
+- [ ] If `GRAPHQL_ENABLED=true`: introspection is off by default in production; keep it that way
 - [ ] Postgres backups and point-in-time recovery enabled
 - [ ] Alerts on the metrics listed below
 
@@ -111,7 +115,17 @@ For S3, leave `S3_ENDPOINT` empty for AWS. Set `S3_PUBLIC_BASE_URL` to serve ava
 
 ## Monitoring and alerts
 
-Scrape `:9090/metrics`. Suggested alerts:
+Warden exposes Prometheus metrics on the private admin port at `:9090/metrics`. Prometheus is the piece that collects them: it scrapes that URL every 15 seconds, stores the time series and evaluates alert rules; Grafana draws dashboards from it and Alertmanager sends the alerts.
+
+The repository ships a ready setup:
+
+| File | What it is |
+| --- | --- |
+| [deploy/prometheus/prometheus.yml](../deploy/prometheus/prometheus.yml) | Scrape config for the `warden` job |
+| [deploy/prometheus/alerts.yml](../deploy/prometheus/alerts.yml) | Alert rules: down, 5xx rate, latency, load shedding, hasher saturation, outbox backlog and dead letters, refresh token reuse, credential stuffing |
+| [deploy/grafana/](../deploy/grafana) | Datasource and a dashboard (traffic, latency, auth events, rate limits, deliveries, memory), provisioned automatically |
+
+Locally: `docker compose --profile monitoring up -d`, then Prometheus at http://localhost:9092 and Grafana at http://localhost:3001 (`admin` / `admin`, change `GRAFANA_ADMIN_PASSWORD`). In production point your existing Prometheus (or Grafana Cloud, Datadog's OpenMetrics check, VictoriaMetrics) at every replica's `:9090/metrics` and load the same rule file. The key expressions:
 
 | Alert | Expression (PromQL) |
 | --- | --- |
@@ -135,7 +149,16 @@ Set `SENTRY_DSN` to receive panics and unexpected errors.
 
 **Revoke a user everywhere**: admin UI > Users > Sign out everywhere, or gRPC `RevokeUserSessions`. Disabling an account also revokes all sessions.
 
-**`ENCRYPTION_KEY` cannot be rotated in place** in this version. If it must change: re-enter provider secrets in the admin UI, rotate the signing key, and ask users with two-factor authentication to enroll again.
+**Rotate `ENCRYPTION_KEY`** without downtime:
+
+1. Generate a new key (`warden keygen`). Set it as `ENCRYPTION_KEY` and move the old one to `ENCRYPTION_PREVIOUS_KEYS` (comma separated). `warden setup` does this for you when you replace the key.
+2. Deploy. New data is sealed with the new key; old data stays readable because every ciphertext records which key sealed it.
+3. Run `warden reencrypt` once. It rewrites signing keys, TOTP secrets, provider credentials, webhook secrets and queued emails under the new key, column by column, and is safe to run while Warden serves traffic.
+4. Remove `ENCRYPTION_PREVIOUS_KEYS` and deploy again.
+
+The same steps switch `ENCRYPTION_ALGORITHM` between `aes-256-gcm` and `xchacha20-poly1305`.
+
+**Revoke an API key** on the API keys page. Publishable and secret keys stop working on every replica within 15 seconds. Use one key per app or service so a leak only needs one revocation.
 
 **Data retention**: expired sessions and delivered outbox events are deleted after 7 days, audit events after `AUTH_AUDIT_RETENTION` (90 days). Account deletion (`DELETE /v1/me`) removes the user, sessions, identities and avatar; audit entries keep only the user id.
 

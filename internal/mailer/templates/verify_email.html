@@ -1,7 +1,7 @@
-{{define "verify_email.html"}}{{template "layout_start" .}}
+{{template "layout_start" .}}
 <h1 style="font-size:20px;margin:0 0 12px">Confirm your email address</h1>
 <p style="margin:0 0 8px">Use the button below to verify the email address for your {{.AppName}} account.</p>
 <p style="margin:24px 0"><a href="{{.Data.Link}}" style="display:inline-block;background:#1d1d1b;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:6px;font-weight:600">Verify email</a></p>
 <p style="margin:0 0 8px;color:#55554f;font-size:13px">This link expires in {{.Data.ExpiresIn}}. If you did not create an account, you can ignore this email.</p>
 <p style="margin:16px 0 0;color:#77776f;font-size:12px;word-break:break-all">{{.Data.Link}}</p>
-{{template "layout_end" .}}{{end}}
+{{template "layout_end" .}}

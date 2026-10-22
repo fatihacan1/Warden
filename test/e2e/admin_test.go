@@ -60,6 +60,11 @@ var csrfRe = regexp.MustCompile(`name="_csrf" value="([^"]+)"`)
 
 func adminLogin(t *testing.T) *adminClient {
 	t.Helper()
+	// Every test logs in from the same address; reset the login rate limit so
+	// the number of admin tests is not capped by it (TestAdminAuth covers it).
+	if keys, _ := A.Redis.Keys(context.Background(), "rate:admin_login:*").Result(); len(keys) > 0 {
+		A.Redis.Del(context.Background(), keys...)
+	}
 	res, _ := adminDo(t, "POST", "/admin/login", "", url.Values{"token": {adminToken}}, nil)
 	if res.StatusCode != 303 {
 		t.Fatalf("admin login: %d", res.StatusCode)
@@ -154,7 +159,8 @@ func TestAdminProviderToggle(t *testing.T) {
 func TestAdminPagesRender(t *testing.T) {
 	a := adminLogin(t)
 	tk := newClient(t).signUp(randEmail(), pw)
-	for _, p := range []string{"/admin", "/admin/settings", "/admin/providers", "/admin/users", "/admin/users?q=example", "/admin/users/" + tk.UserID, "/admin/keys", "/admin/setup"} {
+	for _, p := range []string{"/admin", "/admin/settings", "/admin/providers", "/admin/users", "/admin/users?q=example", "/admin/users/" + tk.UserID, "/admin/keys", "/admin/setup",
+		"/admin/api-keys", "/admin/webhooks", "/admin/emails", "/admin/emails/verify_email", "/admin/emails/layout", "/admin/docs"} {
 		res, body := adminDo(t, "GET", p, a.cookie, nil, nil)
 		if res.StatusCode != 200 || !strings.Contains(body, "</html>") {
 			t.Errorf("%s: %d", p, res.StatusCode)

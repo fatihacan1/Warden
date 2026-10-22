@@ -296,22 +296,30 @@ func (s *Service) SetDisabled(ctx context.Context, userID uuid.UUID, disabled bo
 
 var roleRe = regexp.MustCompile(`^[a-z][a-z0-9_:.-]{0,63}$`)
 
-// SetRoles replaces a user's roles. Roles appear in access tokens; changes
-// apply on the next token refresh.
-func (s *Service) SetRoles(ctx context.Context, userID uuid.UUID, roles []string, actor string) error {
+func cleanRoles(roles []string) ([]string, error) {
 	clean := make([]string, 0, len(roles))
 	for _, r := range roles {
 		if !roleRe.MatchString(r) {
-			return domain.ErrValidation.WithMessage("Roles must be lowercase identifiers (a-z, 0-9, _ : . -).")
+			return nil, domain.ErrValidation.WithMessage("Roles must be lowercase identifiers (a-z, 0-9, _ : . -).")
 		}
 		if !slices.Contains(clean, r) {
 			clean = append(clean, r)
 		}
 	}
 	if len(clean) > 32 {
-		return domain.ErrValidation.WithMessage("Too many roles.")
+		return nil, domain.ErrValidation.WithMessage("Too many roles.")
 	}
-	err := s.Store.InTx(ctx, func(tx *store.Store) error {
+	return clean, nil
+}
+
+// SetRoles replaces a user's roles. Roles appear in access tokens; changes
+// apply on the next token refresh.
+func (s *Service) SetRoles(ctx context.Context, userID uuid.UUID, roles []string, actor string) error {
+	clean, err := cleanRoles(roles)
+	if err != nil {
+		return err
+	}
+	err = s.Store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.SetRoles(ctx, userID, clean); err != nil {
 			return err
 		}
@@ -321,4 +329,76 @@ func (s *Service) SetRoles(ctx context.Context, userID uuid.UUID, roles []string
 		s.audit(ctx, userID, "admin.roles_changed", domain.RequestMeta{}, map[string]any{"roles": clean, "actor": actor})
 	}
 	return err
+}
+
+// CreateUserInput is a user created by a backend (server API, gRPC) rather
+// than by the user signing up.
+type CreateUserInput struct {
+	Email         string
+	Password      string // optional: without one the user signs in socially or resets it
+	Name          string
+	Roles         []string
+	EmailVerified bool
+}
+
+// CreateUser creates an account on behalf of an operator. It ignores the
+// sign-up toggle (that only governs self-service sign-up) but applies the
+// password policy.
+func (s *Service) CreateUser(ctx context.Context, in CreateUserInput, actor string, meta domain.RequestMeta) (*domain.User, error) {
+	email, ok := normalizeEmail(in.Email)
+	if !ok {
+		return nil, domain.ErrValidation.WithFields(map[string]string{"email": "Enter a valid email address."})
+	}
+	roles, err := cleanRoles(in.Roles)
+	if err != nil {
+		return nil, err
+	}
+	u := &domain.User{ID: uuid.Must(uuid.NewV7()), Email: email, Name: cleanName(in.Name), Roles: roles}
+	if in.Password != "" {
+		if err := s.checkNewPassword(ctx, in.Password, email); err != nil {
+			return nil, err
+		}
+		if u.PasswordHash, err = s.hash(ctx, in.Password); err != nil {
+			return nil, err
+		}
+	}
+	if in.EmailVerified {
+		now := time.Now()
+		u.EmailVerifiedAt = &now
+	}
+	err = s.Store.InTx(ctx, func(tx *store.Store) error {
+		if err := tx.CreateUser(ctx, u); err != nil {
+			return err
+		}
+		if err := s.Events.Event(ctx, tx, events.UserCreated, u.ID, map[string]any{"email": u.Email, "method": "server", "actor": actor}); err != nil {
+			return err
+		}
+		if !in.EmailVerified && u.HasPassword() {
+			return s.queueVerificationEmail(ctx, tx, u)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.audit(ctx, u.ID, "admin.user_created", meta, map[string]any{"actor": actor, "roles": roles})
+	return s.Store.GetUserByID(ctx, u.ID)
+}
+
+// AdminUpdateProfile changes a user's name on behalf of an operator.
+func (s *Service) AdminUpdateProfile(ctx context.Context, userID uuid.UUID, name, actor string) (*domain.User, error) {
+	u, err := s.UpdateProfile(ctx, userID, name)
+	if err == nil {
+		s.audit(ctx, userID, "admin.profile_changed", domain.RequestMeta{}, map[string]any{"actor": actor})
+	}
+	return u, err
+}
+
+// FindUserByEmail returns the user with this email.
+func (s *Service) FindUserByEmail(ctx context.Context, rawEmail string) (*domain.User, error) {
+	email, ok := normalizeEmail(rawEmail)
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	return s.Store.GetUserByEmail(ctx, email)
 }

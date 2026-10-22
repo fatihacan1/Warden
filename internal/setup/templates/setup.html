@@ -1,0 +1,122 @@
+{{define "head"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Set up Warden</title>
+<link rel="icon" href="/static/mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/admin.css">
+<script src="/static/setup.js" defer></script>
+</head>
+<body>
+<main class="page setup-page" id="main-content">
+<div class="setup-brand"><img src="/static/mark.svg" alt="" width="24" height="24"> <strong>Warden setup</strong></div>
+{{end}}
+
+{{define "foot"}}
+</main>
+</body>
+</html>{{end}}
+
+{{define "form"}}{{template "head" .}}
+<div class="head">
+  <div>
+    <h1>{{if .Existing}}Update your configuration{{else}}Configure this instance{{end}}</h1>
+    <p class="lede">Fill in the connections, test them, and Warden writes <code>{{.EnvFile}}</code>. {{if .Existing}}Values come from your current file; the old file is kept as a backup.{{else}}Defaults match the local Docker Compose stack.{{end}}</p>
+  </div>
+</div>
+
+{{if .Errors}}
+<section class="notice notice-err" role="alert">
+  <p class="mb-0"><strong>Fix these before saving:</strong></p>
+  <ul class="errors">{{range .Errors}}<li>{{.}}</li>{{end}}</ul>
+</section>
+{{end}}
+
+{{$vals := .Values}}
+<form method="post" action="/review" class="stack" id="setup-form" autocomplete="off">
+  {{range .Sections}}
+  <section class="panel" id="{{.ID}}">
+    <header>
+      <div><h2>{{.Title}}</h2><p class="help mb-0">{{.Lede}}</p></div>
+      {{if .Check}}<div class="row"><span class="check-result" data-result="{{.Check}}" role="status"></span><button type="button" class="btn btn-small" data-check="{{.Check}}">Test connection</button></div>{{end}}
+    </header>
+    <div class="panel-body provider-grid">
+      {{range .Fields}}
+      {{if eq .Kind "bool"}}
+      <div class="field wide">
+        <label class="switch"><input type="checkbox" name="{{.Key}}" {{if eq (value $vals .Key) "true"}}checked{{end}}> {{.Label}}</label>
+        {{if .Help}}<p class="help">{{.Help}}</p>{{end}}
+      </div>
+      {{else if eq .Kind "select"}}
+      <fieldset class="field wide choices">
+        <legend>{{.Label}}</legend>
+        {{$key := .Key}}{{$cur := value $vals .Key}}
+        {{range .Options}}
+        <label class="choice"><input type="radio" name="{{$key}}" value="{{.Value}}" {{if eq $cur .Value}}checked{{end}}> <span><strong>{{.Label}}</strong><br><span class="help">{{.Help}}</span></span></label>
+        {{end}}
+        {{if .Help}}<p class="help wide">{{.Help}}</p>{{end}}
+      </fieldset>
+      {{else}}
+      <div class="field{{if or (eq .Kind "list") (eq .Kind "secret")}} wide{{end}}">
+        <label for="f-{{.Key}}">{{.Label}} <span class="muted mono small">{{.Key}}</span></label>
+        <div class="input-row">
+          <input id="f-{{.Key}}" name="{{.Key}}" type="{{if eq .Kind "secret"}}password{{else}}text{{end}}" spellcheck="false" value="{{value $vals .Key}}" placeholder="{{.Placeholder}}"{{if eq .Kind "secret"}} data-secret{{end}}>
+          {{if eq .Kind "secret"}}<button type="button" class="btn btn-small" data-toggle="f-{{.Key}}">Show</button>{{end}}
+          {{if .Generate}}<button type="button" class="btn btn-small" data-generate="{{.Generate}}" data-target="f-{{.Key}}">Generate</button>{{end}}
+        </div>
+        {{if .Help}}<p class="help">{{.Help}}</p>{{end}}
+      </div>
+      {{end}}
+      {{end}}
+    </div>
+  </section>
+  {{end}}
+
+  <div class="row">
+    <button class="btn btn-primary" type="submit">Review .env</button>
+    <span class="help">Nothing is written until you confirm on the next page.</span>
+  </div>
+</form>
+{{template "foot" .}}{{end}}
+
+{{define "review"}}{{template "head" .}}
+<div class="head">
+  <div>
+    <h1>Review</h1>
+    <p class="lede">This configuration passed the same checks Warden runs at start-up.</p>
+  </div>
+</div>
+{{if .Errors}}<section class="notice notice-err" role="alert">{{range .Errors}}<p class="mb-0">{{.}}</p>{{end}}</section>{{end}}
+{{range .Notes}}<p class="notice notice-warn">{{.}}</p>{{end}}
+<section class="panel">
+  <header><h2><code>{{.EnvFile}}</code></h2><span class="tag tag-warn">Contains secrets</span></header>
+  <pre class="env-preview">{{.Env}}</pre>
+</section>
+<div class="row mt-20">
+  <form method="post" action="/save" class="inline-form"><button class="btn btn-primary" type="submit">Write .env</button></form>
+  <form method="post" action="/download" class="inline-form"><button class="btn" type="submit">Download instead</button></form>
+  <a class="btn" href="/">Back</a>
+</div>
+<p class="help mt-20">Never commit this file. In production, put these values in your platform's secret manager instead of a file.</p>
+{{template "foot" .}}{{end}}
+
+{{define "saved"}}{{template "head" .}}
+<div class="head">
+  <div>
+    <h1>Configuration saved</h1>
+    <p class="lede">Written to <code>{{.Saved}}</code>{{if .Backup}}; the previous file is <code>{{.Backup}}</code>{{end}}. This setup page has stopped.</p>
+  </div>
+</div>
+<section class="panel">
+  <header><h2>Next steps</h2></header>
+  <div class="panel-body">
+    <ol class="steps mb-0">
+      <li>Start Warden: <code>warden serve</code>, <code>go run ./cmd/warden</code> or <code>docker compose up -d --build</code>.</li>
+      <li>Open the admin UI at <code>http://localhost:9090</code> and sign in with the admin token.</li>
+      <li>Create a publishable key for each app and a secret key for each backend on <strong>API keys</strong>, then follow <strong>API docs</strong>.</li>
+    </ol>
+  </div>
+</section>
+{{template "foot" .}}{{end}}

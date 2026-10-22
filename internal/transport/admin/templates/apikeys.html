@@ -1,0 +1,100 @@
+{{define "content"}}{{$csrf := .CSRF}}{{with .Data}}
+<div class="head">
+  <div>
+    <h1>API keys</h1>
+    <p class="lede">Publishable keys identify your apps. Secret keys let your own backends manage users through the server API.</p>
+  </div>
+</div>
+
+{{with .Reveal}}
+<section class="panel reveal" aria-live="polite">
+  <div class="panel-body">
+    <h2>{{if eq .Kind "secret"}}Copy the secret key now{{else}}Publishable key created{{end}}</h2>
+    <p>{{if eq .Kind "secret"}}This is the only time <strong>{{.Name}}</strong> is shown. Store it in your backend's secret manager or environment, never in a web or mobile app.{{else}}Put it in your web or mobile app configuration. It is public by design.{{end}}</p>
+    <div class="copy"><code>{{.Value}}</code><button type="button" class="btn btn-small" data-copy="{{.Value}}">Copy</button></div>
+  </div>
+</section>
+{{end}}
+
+<div class="grid grid-main">
+  <div class="stack">
+    <section class="panel">
+      <header><h2>Keys</h2></header>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Type</th><th>Key</th><th class="hide-sm">Last used</th><th></th></tr></thead>
+          <tbody>
+          {{range .Keys}}
+            <tr>
+              <td>{{.Name}}{{if .AllowedOrigins}}<br><span class="muted small">{{join .AllowedOrigins ", "}}</span>{{end}}</td>
+              <td>{{if eq .Kind "secret"}}<span class="tag tag-accent">Secret</span>{{else}}<span class="tag">Publishable</span>{{end}}{{if not .Active}} <span class="tag tag-err">Revoked</span>{{end}}</td>
+              <td class="mono key-cell">{{.Hint}}{{if and (eq .Kind "publishable") .Active}} <button type="button" class="btn btn-small" data-copy="{{.Hint}}">Copy</button>{{end}}</td>
+              <td class="hide-sm num">{{if .LastUsedAt}}{{ago (deref .LastUsedAt)}}{{else}}<span class="muted">Never</span>{{end}}</td>
+              <td>
+                {{if .Active}}
+                <details class="row-menu">
+                  <summary class="btn btn-small">Edit</summary>
+                  <form method="post" action="/admin/api-keys/{{.ID}}" class="row-menu-body">
+                    <input type="hidden" name="_csrf" value="{{$csrf}}">
+                    <div class="field">
+                      <label for="name-{{.ID}}">Name</label>
+                      <input id="name-{{.ID}}" name="name" type="text" value="{{.Name}}">
+                    </div>
+                    {{if eq .Kind "publishable"}}
+                    <div class="field">
+                      <label for="origins-{{.ID}}">Allowed origins</label>
+                      <textarea id="origins-{{.ID}}" name="origins" spellcheck="false" placeholder="https://app.example.com">{{join .AllowedOrigins "\n"}}</textarea>
+                      <p class="help">One per line. Empty = any origin, and mobile apps.</p>
+                    </div>
+                    {{end}}
+                    <button class="btn btn-primary btn-small" type="submit">Save</button>
+                  </form>
+                  <form method="post" action="/admin/api-keys/{{.ID}}/revoke" class="row-menu-body sep-top" data-confirm="Revoke {{.Name}}? Apps or services using it stop working immediately.">
+                    <input type="hidden" name="_csrf" value="{{$csrf}}">
+                    <button class="btn btn-danger btn-small" type="submit">Revoke key</button>
+                  </form>
+                </details>
+                {{end}}
+              </td>
+            </tr>
+          {{else}}
+            <tr><td colspan="5" class="muted">No keys yet. Create a publishable key for each app and a secret key for each backend.</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header><h2>How the keys protect your apps</h2></header>
+      <div class="panel-body prose">
+        <p><strong>Publishable key</strong> (<code>{{.PKPrefix}}…</code>) goes into the web or mobile app and is sent as <code>X-Warden-Key</code>. It tells Warden which app is calling. Bound to origins, a browser on any other site gets <code>origin_not_allowed</code>, and its origins are added to CORS automatically. It is not a password: anything shipped to users can be read, so user data stays protected by access tokens, PKCE and refresh token rotation.</p>
+        <p><strong>Secret key</strong> (<code>{{.SKPrefix}}…</code>) stays on your servers and is sent as <code>Authorization: Bearer</code> to <code>{{.PublicURL}}/v1/server/…</code>. Warden stores only its SHA-256 hash, rejects it on requests that carry a browser <code>Origin</code>, and rate limits it per key.</p>
+        <p class="mb-0">{{if .Required}}<span class="tag tag-ok">Enforced</span> Requests without a valid publishable key are rejected.{{else}}<span class="tag">Optional</span> Requests without a key are still accepted. Turn on <a href="/admin/settings">Require a publishable key</a> once every app sends one.{{end}}</p>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <header><h2>Create a key</h2></header>
+    <form method="post" action="/admin/api-keys" class="panel-body">
+      <input type="hidden" name="_csrf" value="{{$csrf}}">
+      <fieldset class="choices">
+        <legend>Type</legend>
+        <label class="choice"><input type="radio" name="kind" value="publishable" checked> <span><strong>Publishable</strong><br><span class="help">For a web or mobile app</span></span></label>
+        <label class="choice"><input type="radio" name="kind" value="secret"> <span><strong>Secret</strong><br><span class="help">For a backend service</span></span></label>
+      </fieldset>
+      <div class="field">
+        <label for="key-name">Name</label>
+        <input id="key-name" name="name" type="text" placeholder="Web app" required maxlength="80">
+      </div>
+      <div class="field">
+        <label for="key-origins">Allowed origins <span class="muted">(publishable only)</span></label>
+        <textarea id="key-origins" name="origins" spellcheck="false" placeholder="https://app.example.com&#10;http://localhost:3000"></textarea>
+        <p class="help">One per line. Leave empty for mobile apps.</p>
+      </div>
+      <button class="btn btn-primary" type="submit">Create key</button>
+    </form>
+  </section>
+</div>
+{{end}}{{end}}
