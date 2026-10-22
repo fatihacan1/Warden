@@ -1,0 +1,19 @@
+# Prometheus for the local stack: `docker compose --profile monitoring up -d`.
+#
+# Warden exposes metrics on its private admin port (9090) at /metrics. In
+# production, scrape every replica (Kubernetes service discovery, Consul,
+# or a static list) and keep that port off the internet.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: warden
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["warden:9090"]
+        labels:
+          instance_name: local
