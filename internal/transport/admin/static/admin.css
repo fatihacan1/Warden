@@ -364,3 +364,4 @@ input[type=email] { width: 100%; font: inherit; color: var(--ink); background: v
 .onboarding [data-step] > header .row .btn { display: none; }
 .onboarding .check-result:not(:empty) { display: block; }
 @media (prefers-reduced-motion: reduce) { .onboard-progress span { transition: none; } }
+.setup-page [data-step] > header h2 { font-size: 22px; letter-spacing: -0.01em; }
