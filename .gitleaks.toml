@@ -1,0 +1,8 @@
+# Gitleaks configuration. The allowlisted files hold public development
+# defaults (rejected by Warden in production) and test fixtures.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Public development defaults and test fixtures"
+paths = ['''\.env\.example$''', '''internal/config/config_test\.go$''']

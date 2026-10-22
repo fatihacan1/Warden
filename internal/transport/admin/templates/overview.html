@@ -1,0 +1,64 @@
+{{define "content"}}{{with .Data}}
+<div class="head">
+  <div>
+    <h1>Overview</h1>
+    <p class="lede">Instance at <a href="{{.PublicURL}}">{{.PublicURL}}</a></p>
+  </div>
+  <div class="row">
+    {{range .Deps}}<span class="tag {{if .OK}}tag-ok{{else}}tag-err{{end}}"><span class="dot {{if .OK}}dot-ok{{else}}dot-err{{end}}"></span>{{.Name}}</span>{{end}}
+  </div>
+</div>
+
+<dl class="stats">
+  <div class="stat"><dt>Users</dt><dd>{{.Stats.Total}}</dd></div>
+  <div class="stat"><dt>New in 24h</dt><dd>{{.Stats.NewLast24h}}</dd></div>
+  <div class="stat"><dt>Verified email</dt><dd>{{.Stats.Verified}}</dd></div>
+  <div class="stat"><dt>Two-factor on</dt><dd>{{.Stats.MFA}}</dd></div>
+  <div class="stat"><dt>Active sessions</dt><dd>{{.Stats.ActiveSessions}}</dd></div>
+  <div class="stat"><dt>Disabled</dt><dd>{{.Stats.Disabled}}</dd></div>
+</dl>
+
+<div class="grid grid-main">
+  <section class="panel">
+    <header><h2>Recent security events</h2><a href="/admin/users">All users</a></header>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Event</th><th>User</th><th class="hide-sm">IP</th><th>When</th></tr></thead>
+        <tbody>
+        {{range .Recent}}
+          <tr>
+            <td><code>{{.Type}}</code></td>
+            <td>{{if .UserID}}<a class="mono" href="/admin/users/{{.UserID}}">{{printf "%.8s" (print .UserID)}}</a>{{else}}<span class="muted">-</span>{{end}}</td>
+            <td class="hide-sm mono">{{.IP}}</td>
+            <td class="num" title="{{date .CreatedAt}}">{{ago .CreatedAt}}</td>
+          </tr>
+        {{else}}
+          <tr><td colspan="4" class="muted">No events yet. Sign-ups and sign-ins will appear here.</td></tr>
+        {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="stack">
+    <section class="panel">
+      <header><h2>Features</h2></header>
+      <div class="panel-body">
+        <dl class="kv">
+          {{range .Features}}<dt>{{.Name}}</dt><dd>{{if .On}}<span class="dot dot-ok"></span>{{else}}<span class="dot"></span>{{end}}{{if .Value}}{{.Value}}{{else}}None{{end}}</dd>{{end}}
+        </dl>
+      </div>
+    </section>
+    <section class="panel">
+      <header><h2>Delivery queue</h2></header>
+      <div class="panel-body">
+        <dl class="kv">
+          <dt>Pending</dt><dd class="num">{{.OutboxPending}}</dd>
+          <dt>Dead letters</dt><dd class="num">{{if gt .OutboxDead 0}}<span class="tag tag-err">{{.OutboxDead}}</span>{{else}}0{{end}}</dd>
+          <dt>Signing key</dt><dd><a class="mono" href="/admin/keys">{{printf "%.12s" .KID}}…</a> <span class="muted">since {{date .KeySince}}</span></dd>
+        </dl>
+      </div>
+    </section>
+  </div>
+</div>
+{{end}}{{end}}

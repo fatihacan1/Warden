@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package warden.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/fatihacan1/warden/pkg/api/wardenv1;wardenv1";
+
+// AuthService is the internal service-to-service API. It is meant for other
+// backends on a private network, authenticated with an API key sent in the
+// "x-api-key" metadata header. End-user clients use the REST API instead.
+service AuthService {
+  // VerifyAccessToken validates a JWT access token. With check_session=true it
+  // also confirms the session has not been revoked (one database lookup).
+  rpc VerifyAccessToken(VerifyAccessTokenRequest) returns (VerifyAccessTokenResponse);
+  // GetUser returns one user.
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  // GetUsers returns up to 100 users by id. Unknown ids are skipped.
+  rpc GetUsers(GetUsersRequest) returns (GetUsersResponse);
+  // SetUserRoles replaces a user's roles (included in future access tokens).
+  rpc SetUserRoles(SetUserRolesRequest) returns (SetUserRolesResponse);
+  // SetUserDisabled disables (and signs out) or re-enables a user.
+  rpc SetUserDisabled(SetUserDisabledRequest) returns (SetUserDisabledResponse);
+  // RevokeUserSessions signs a user out everywhere.
+  rpc RevokeUserSessions(RevokeUserSessionsRequest) returns (RevokeUserSessionsResponse);
+}
+
+message User {
+  string id = 1;
+  string email = 2;
+  bool email_verified = 3;
+  string name = 4;
+  string avatar_url = 5;
+  repeated string roles = 6;
+  bool mfa_enabled = 7;
+  bool disabled = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp last_sign_in_at = 10;
+}
+
+message VerifyAccessTokenRequest {
+  string access_token = 1;
+  bool check_session = 2;
+}
+
+message VerifyAccessTokenResponse {
+  bool valid = 1;
+  string user_id = 2;
+  string session_id = 3;
+  string email = 4;
+  bool email_verified = 5;
+  repeated string roles = 6;
+  repeated string amr = 7;
+  google.protobuf.Timestamp expires_at = 8;
+  // Machine readable reason when valid=false: "invalid_token" | "session_revoked".
+  string reason = 9;
+}
+
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message GetUserResponse {
+  User user = 1;
+}
+
+message GetUsersRequest {
+  repeated string user_ids = 1;
+}
+
+message GetUsersResponse {
+  repeated User users = 1;
+}
+
+message SetUserRolesRequest {
+  string user_id = 1;
+  repeated string roles = 2;
+}
+
+message SetUserRolesResponse {}
+
+message SetUserDisabledRequest {
+  string user_id = 1;
+  bool disabled = 2;
+}
+
+message SetUserDisabledResponse {}
+
+message RevokeUserSessionsRequest {
+  string user_id = 1;
+}
+
+message RevokeUserSessionsResponse {
+  int32 revoked = 1;
+}

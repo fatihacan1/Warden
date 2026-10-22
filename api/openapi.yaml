@@ -1,0 +1,739 @@
+openapi: 3.1.0
+info:
+  title: Warden public API
+  version: 1.0.0
+  summary: Authentication service for web and mobile apps.
+  description: |
+    Sign-up, sign-in, social login, MFA and session management.
+
+    Access tokens are ES256 JWTs (`typ: at+jwt`). Verify them in your services
+    with the keys at `/.well-known/jwks.json`. Refresh tokens are opaque, single
+    use, and rotated on every refresh.
+
+    Browser apps can send `X-Auth-Mode: cookie` to receive the refresh token as
+    an HttpOnly cookie instead of in the response body.
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: Auth
+  - name: OAuth
+  - name: Account
+  - name: MFA
+  - name: Discovery
+
+paths:
+  /v1/auth/providers:
+    get:
+      tags: [Auth]
+      summary: Enabled sign-in methods and public settings
+      operationId: listProviders
+      security: []
+      responses:
+        "200":
+          description: Sign-in options
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Providers" }
+
+  /v1/auth/signup:
+    post:
+      tags: [Auth]
+      summary: Create a password account
+      operationId: signUp
+      security: []
+      parameters: [{ $ref: "#/components/parameters/AuthMode" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email, maxLength: 254 }
+                password: { type: string, minLength: 8, maxLength: 128 }
+                name: { type: string, maxLength: 100 }
+      responses:
+        "201": { $ref: "#/components/responses/Auth" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /v1/auth/signin:
+    post:
+      tags: [Auth]
+      summary: Sign in with email and password
+      description: Returns `status = mfa_required` with an `mfa_token` when two-factor authentication is enabled.
+      operationId: signIn
+      security: []
+      parameters: [{ $ref: "#/components/parameters/AuthMode" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Auth" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/Busy" }
+
+  /v1/auth/mfa/verify:
+    post:
+      tags: [MFA]
+      summary: Complete sign-in with a TOTP or recovery code
+      operationId: verifyMFA
+      security: []
+      parameters: [{ $ref: "#/components/parameters/AuthMode" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mfa_token, code]
+              properties:
+                mfa_token: { type: string }
+                code: { type: string, description: "6 digit TOTP code or recovery code (xxxxx-xxxxx)" }
+      responses:
+        "200": { $ref: "#/components/responses/Auth" }
+        "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate the refresh token
+      description: |
+        Returns a new access token and a new refresh token. The old refresh
+        token stops working. Replaying an old token after a short grace period
+        revokes the whole session. In cookie mode the token is read from the
+        HttpOnly cookie and the body may be empty.
+      operationId: refresh
+      security: []
+      parameters: [{ $ref: "#/components/parameters/AuthMode" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Auth" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /v1/auth/signout:
+    post:
+      tags: [Auth]
+      summary: Revoke the current session
+      description: Accepts the refresh token (body or cookie mode) or a bearer access token. Idempotent.
+      operationId: signOut
+      security: [{}, { bearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/AuthMode" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "204": { description: Signed out }
+
+  /v1/auth/email/verify:
+    post:
+      tags: [Auth]
+      summary: Confirm an email address
+      operationId: verifyEmail
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200":
+          description: Verified
+          content:
+            application/json:
+              schema: { type: object, properties: { verified: { type: boolean } } }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /v1/auth/password/forgot:
+    post:
+      tags: [Auth]
+      summary: Email a password reset link
+      description: Always returns 202, whether or not the account exists.
+      operationId: forgotPassword
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema: { type: object, properties: { message: { type: string } } }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /v1/auth/password/reset:
+    post:
+      tags: [Auth]
+      summary: Set a new password with a reset token
+      description: Signs out every session of the user.
+      operationId: resetPassword
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: Password changed
+          content:
+            application/json:
+              schema: { type: object, properties: { reset: { type: boolean } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /v1/oauth/{provider}/authorize:
+    get:
+      tags: [OAuth]
+      summary: Start social sign-in
+      description: Redirects the browser to the identity provider.
+      operationId: oauthAuthorize
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Provider"
+        - { name: redirect_uri, in: query, required: true, schema: { type: string }, description: Must exactly match an allowed redirect URI }
+        - { name: code_challenge, in: query, required: true, schema: { type: string, minLength: 43, maxLength: 43 }, description: "base64url(sha256(code_verifier))" }
+        - { name: code_challenge_method, in: query, schema: { type: string, enum: [S256], default: S256 } }
+        - { name: state, in: query, schema: { type: string, maxLength: 512 }, description: Returned unchanged to redirect_uri }
+      responses:
+        "302": { description: Redirect to the provider }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /v1/oauth/{provider}/callback:
+    get:
+      tags: [OAuth]
+      summary: Provider callback (register this URL with the provider)
+      description: Redirects to `redirect_uri?code=...&state=...` or `redirect_uri?error=...&state=...`.
+      operationId: oauthCallback
+      security: []
+      parameters: [{ $ref: "#/components/parameters/Provider" }]
+      responses:
+        "303": { description: Redirect back to the app }
+        "401": { description: Invalid or expired sign-in request (HTML page) }
+    post:
+      tags: [OAuth]
+      summary: Provider callback for form_post (Apple)
+      operationId: oauthCallbackPost
+      security: []
+      parameters: [{ $ref: "#/components/parameters/Provider" }]
+      responses:
+        "303": { description: Redirect back to the app }
+
+  /v1/oauth/token:
+    post:
+      tags: [OAuth]
+      summary: Exchange the one-time login code for tokens
+      operationId: oauthToken
+      security: []
+      parameters: [{ $ref: "#/components/parameters/AuthMode" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, code_verifier, redirect_uri]
+              properties:
+                code: { type: string }
+                code_verifier: { type: string, minLength: 43, maxLength: 128 }
+                redirect_uri: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Auth" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /v1/oauth/{provider}/native:
+    post:
+      tags: [OAuth]
+      summary: Sign in with an ID token from a native SDK (apple, google)
+      operationId: oauthNative
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Provider"
+        - $ref: "#/components/parameters/AuthMode"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id_token, nonce]
+              properties:
+                id_token: { type: string }
+                nonce: { type: string, minLength: 16, description: The raw nonce; Apple tokens may contain its SHA-256 hex }
+                name: { type: string, description: "Display name (Apple shares it only with the app, on first sign-in)" }
+      responses:
+        "200": { $ref: "#/components/responses/Auth" }
+        "201": { $ref: "#/components/responses/Auth" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /v1/me:
+    get:
+      tags: [Account]
+      summary: Current user
+      operationId: getMe
+      responses:
+        "200":
+          description: User
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Account]
+      summary: Update profile
+      operationId: updateMe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 100 }
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+    delete:
+      tags: [Account]
+      summary: Delete the account permanently
+      description: Requires the password, or a recent sign-in for accounts without one.
+      operationId: deleteMe
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password: { type: string }
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /v1/me/password:
+    post:
+      tags: [Account]
+      summary: Change the password (or set one for social-only accounts)
+      description: Signs out every other session.
+      operationId: changePassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_password]
+              properties:
+                current_password: { type: string }
+                new_password: { type: string }
+      responses:
+        "204": { description: Changed }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /v1/me/email/resend:
+    post:
+      tags: [Account]
+      summary: Resend the verification email
+      operationId: resendVerification
+      responses:
+        "202": { description: Sent if the email is not verified yet }
+
+  /v1/me/avatar:
+    put:
+      tags: [Account]
+      summary: Upload an avatar
+      description: JPEG, PNG, GIF or WebP. Stored as a 512x512 JPEG.
+      operationId: uploadAvatar
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+          image/*:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "501": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Account]
+      summary: Remove the avatar
+      operationId: deleteAvatar
+      responses:
+        "204": { description: Removed }
+
+  /v1/me/sessions:
+    get:
+      tags: [Account]
+      summary: Active sessions (devices)
+      operationId: listSessions
+      responses:
+        "200":
+          description: Sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions: { type: array, items: { $ref: "#/components/schemas/Session" } }
+    delete:
+      tags: [Account]
+      summary: Sign out every other device
+      operationId: revokeOtherSessions
+      responses:
+        "200":
+          description: Number of revoked sessions
+          content:
+            application/json:
+              schema: { type: object, properties: { revoked: { type: integer } } }
+
+  /v1/me/sessions/{id}:
+    delete:
+      tags: [Account]
+      summary: Sign out one device
+      operationId: revokeSession
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Revoked }
+
+  /v1/me/identities:
+    get:
+      tags: [Account]
+      summary: Linked social accounts
+      operationId: listIdentities
+      responses:
+        "200":
+          description: Identities
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  identities:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        provider: { type: string }
+                        email: { type: string }
+                        created_at: { type: string, format: date-time }
+                        last_used_at: { type: string, format: date-time }
+
+  /v1/me/identities/{provider}:
+    delete:
+      tags: [Account]
+      summary: Unlink a social account
+      description: Refused with `last_credential` when it is the only way to sign in.
+      operationId: unlinkIdentity
+      parameters: [{ $ref: "#/components/parameters/Provider" }]
+      responses:
+        "204": { description: Unlinked }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /v1/me/mfa/totp/setup:
+    post:
+      tags: [MFA]
+      summary: Start authenticator app enrollment
+      operationId: totpSetup
+      responses:
+        "200":
+          description: Secret to show as a QR code (valid 10 minutes)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secret: { type: string }
+                  otpauth_url: { type: string }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /v1/me/mfa/totp/enable:
+    post:
+      tags: [MFA]
+      summary: Confirm enrollment with a code
+      operationId: totpEnable
+      requestBody: { $ref: "#/components/requestBodies/Code" }
+      responses:
+        "200":
+          description: Enabled; recovery codes are shown once
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: { type: boolean }
+                  recovery_codes: { type: array, items: { type: string } }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /v1/me/mfa/totp/disable:
+    post:
+      tags: [MFA]
+      summary: Turn two-factor authentication off
+      operationId: totpDisable
+      requestBody: { $ref: "#/components/requestBodies/Code" }
+      responses:
+        "200": { description: Disabled }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /v1/me/mfa/recovery-codes:
+    post:
+      tags: [MFA]
+      summary: Replace recovery codes
+      operationId: regenerateRecoveryCodes
+      requestBody: { $ref: "#/components/requestBodies/Code" }
+      responses:
+        "200":
+          description: New recovery codes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recovery_codes: { type: array, items: { type: string } }
+
+  /.well-known/jwks.json:
+    get:
+      tags: [Discovery]
+      summary: Public signing keys (JWKS)
+      operationId: jwks
+      security: []
+      responses:
+        "200":
+          description: JSON Web Key Set
+          content:
+            application/jwk-set+json:
+              schema:
+                type: object
+                properties:
+                  keys: { type: array, items: { type: object } }
+
+  /.well-known/openid-configuration:
+    get:
+      tags: [Discovery]
+      summary: Discovery document (issuer, jwks_uri)
+      operationId: discovery
+      security: []
+      responses:
+        "200":
+          description: Discovery document
+          content:
+            application/json:
+              schema: { type: object }
+
+  /healthz:
+    get:
+      tags: [Discovery]
+      summary: Liveness probe
+      operationId: healthz
+      security: []
+      responses:
+        "200": { description: Process is alive }
+
+  /readyz:
+    get:
+      tags: [Discovery]
+      summary: Readiness probe (Postgres and Redis)
+      operationId: readyz
+      security: []
+      responses:
+        "200": { description: Ready }
+        "503": { description: A dependency is unavailable }
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    AuthMode:
+      name: X-Auth-Mode
+      in: header
+      required: false
+      description: Send `cookie` to receive and send the refresh token as an HttpOnly cookie (browser apps).
+      schema: { type: string, enum: [cookie] }
+    Provider:
+      name: provider
+      in: path
+      required: true
+      schema: { type: string, enum: [google, apple, github, discord] }
+
+  requestBodies:
+    Code:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [code]
+            properties:
+              code: { type: string }
+
+  responses:
+    Auth:
+      description: Authentication result
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AuthResponse" }
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: Too many requests
+      headers:
+        Retry-After: { schema: { type: integer }, description: Seconds to wait }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Busy:
+      description: Server busy, retry later
+      headers:
+        Retry-After: { schema: { type: integer } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, examples: [invalid_credentials] }
+            message: { type: string }
+            fields: { type: object, additionalProperties: { type: string } }
+            request_id: { type: string }
+
+    Tokens:
+      type: object
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, const: Bearer }
+        expires_in: { type: integer, description: Seconds }
+        expires_at: { type: string, format: date-time }
+        refresh_token: { type: string, description: Omitted in cookie mode }
+        session_id: { type: string, format: uuid }
+
+    AuthResponse:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [authenticated, mfa_required, verification_required] }
+        user: { $ref: "#/components/schemas/User" }
+        tokens: { $ref: "#/components/schemas/Tokens" }
+        mfa_token: { type: string, description: Present when status is mfa_required }
+        new_user: { type: boolean }
+
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        email_verified: { type: boolean }
+        name: { type: string }
+        avatar_url: { type: string }
+        roles: { type: array, items: { type: string } }
+        mfa_enabled: { type: boolean }
+        has_password: { type: boolean }
+        created_at: { type: string, format: date-time }
+        last_sign_in_at: { type: string, format: date-time }
+
+    Session:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        current: { type: boolean }
+        user_agent: { type: string }
+        ip: { type: string }
+        amr: { type: array, items: { type: string } }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+
+    Providers:
+      type: object
+      properties:
+        password: { type: boolean }
+        signup_enabled: { type: boolean }
+        email_verification_required: { type: boolean }
+        password_min_length: { type: integer }
+        providers:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              display_name: { type: string }
+              authorize_url: { type: string }
+              native: { type: boolean }
+
+security:
+  - bearer: []

@@ -1,0 +1,31 @@
+{{define "content"}}{{$csrf := .CSRF}}{{with .Data}}{{$active := .Active}}
+<div class="head">
+  <div>
+    <h1>Signing keys</h1>
+    <p class="lede">Access tokens are ES256 JWTs. Services verify them offline with the public keys at the JWKS URL.</p>
+  </div>
+  <form method="post" action="/admin/keys/rotate" data-confirm="Rotate the signing key now? Existing tokens stay valid until they expire.">
+    <input type="hidden" name="_csrf" value="{{$csrf}}">
+    <button class="btn btn-primary" type="submit">Rotate now</button>
+  </form>
+</div>
+<label>JWKS URL</label>
+<div class="copy"><code>{{.JWKS}}</code><button type="button" class="btn btn-small" data-copy="{{.JWKS}}">Copy</button></div>
+<p class="muted">Automatic rotation: {{if .Rotation}}every {{.Rotation}}{{else}}off{{end}}. Retired keys stay published for {{.AccessTTL}} plus a 10 minute margin.</p>
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Key ID</th><th>Algorithm</th><th>Status</th><th>Created</th><th class="hide-sm">Retired</th></tr></thead>
+      <tbody>
+      {{range .Keys}}
+        <tr>
+          <td class="mono">{{.KID}}</td><td>{{.Algorithm}}</td>
+          <td>{{if eq .KID $active}}<span class="tag tag-ok">Signing</span>{{else}}<span class="tag">Verify only</span>{{end}}</td>
+          <td class="num">{{date .CreatedAt}}</td><td class="hide-sm num">{{date .RetiredAt}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}{{end}}

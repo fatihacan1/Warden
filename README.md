@@ -1,0 +1,298 @@
+# Warden
+
+A self-hosted authentication service in Go. Run one instance per product and every backend you write (Go, Node.js, Python, anything) gets sign-up, sign-in, social login, MFA and sessions without reimplementing them.
+
+Warden issues short-lived **ES256 JWT access tokens** that your services verify offline against a public JWKS endpoint, plus **rotating refresh tokens** with theft detection. Social providers (Google, Apple, GitHub, Discord) are switched on and off from a private admin UI, without touching code or restarting.
+
+![Warden admin: sign-in providers](docs/images/admin-providers.png)
+
+## Contents
+
+- [Features](#features)
+- [Quick start](#quick-start)
+- [How it fits into your stack](#how-it-fits-into-your-stack)
+- [Admin UI](#admin-ui)
+- [Using Warden from your apps](#using-warden-from-your-apps)
+- [API overview](#api-overview)
+- [Configuration](#configuration)
+- [Security model](#security-model)
+- [Performance and resilience](#performance-and-resilience)
+- [Observability](#observability)
+- [Development](#development)
+- [Project layout](#project-layout)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Features
+
+**Authentication**
+- Email and password with Argon2id (OWASP parameters), optional [Have I Been Pwned](https://haveibeenpwned.com/API/v3#PwnedPasswords) breach check
+- Social sign-in: Google, Apple, GitHub, Discord. Browser flow with PKCE for web and mobile, plus **native ID token sign-in** for Sign in with Apple and Google Sign-In on iOS/Android
+- TOTP two-factor authentication with single-use codes and recovery codes
+- Email verification and password reset with single-use, expiring links
+- Safe account linking that blocks pre-account takeover
+
+**Sessions and tokens**
+- ES256 access tokens (RFC 9068 `at+jwt`), JWKS and OpenID discovery documents
+- Opaque refresh tokens, rotated on every use, with reuse detection that revokes the whole session
+- Automatic signing key rotation with zero downtime
+- Session list and remote sign-out per device; cookie mode (HttpOnly) for browser apps
+
+**Operations**
+- Private admin UI: feature toggles, provider credentials, users, sessions, keys, integration snippets
+- Internal gRPC API for service-to-service calls (verify token, users, roles, disable, revoke)
+- Domain events to RabbitMQ through a transactional outbox (`user.created`, `user.signed_in`, ...)
+- Avatar uploads to any S3-compatible store (AWS S3, Garage, Cloudflare R2, MinIO, Backblaze B2)
+- Prometheus metrics, structured JSON logs, Sentry error reporting, health and readiness probes
+- Load shedding, bounded password hashing, distributed rate limiting, graceful shutdown
+
+## Quick start
+
+Requirements: Docker Desktop (or Docker Engine with Compose v2). Go 1.26+ only for development.
+
+```bash
+git clone https://github.com/fatihacan1/warden.git
+cd warden
+cp .env.example .env
+docker compose up -d --build
+```
+
+| What | URL |
+| --- | --- |
+| Public API | http://localhost:8080 |
+| Admin UI (token: `ADMIN_TOKEN` in `.env`) | http://localhost:9090 |
+| Mailpit, catches every email | http://localhost:8025 |
+| RabbitMQ management (`warden` / `warden`) | http://localhost:15672 |
+| Garage Web UI (S3 browser) | http://localhost:3909 |
+
+Create an account and call an authenticated endpoint:
+
+```bash
+curl -s localhost:8080/v1/auth/signup -H 'Content-Type: application/json' \
+  -d '{"email":"ada@example.com","password":"correct horse battery staple","name":"Ada"}'
+
+curl -s localhost:8080/v1/me -H "Authorization: Bearer <access_token from the response>"
+```
+
+The values in `.env.example` are public development defaults. Warden refuses to start with them when `APP_ENV=production`; generate your own with `docker compose run --rm --no-deps warden keygen` or `go run ./cmd/warden keygen`.
+
+## How it fits into your stack
+
+```mermaid
+flowchart LR
+    subgraph Clients
+      W[Web app]
+      M[Mobile app]
+    end
+    subgraph Your backends
+      A[API in Node.js]
+      B[API in Go]
+    end
+    subgraph Warden
+      P[Public API :8080]
+      G[gRPC :9091]
+      AD[Admin UI :9090]
+    end
+    W -- sign in / refresh --> P
+    M -- sign in / refresh --> P
+    W -- Bearer access token --> A
+    M -- Bearer access token --> B
+    A -. JWKS, cached .-> P
+    B -. optional: verify, users, roles .-> G
+    P --> PG[(PostgreSQL)]
+    P --> R[(Redis)]
+    P --> S3[(S3 storage)]
+    P -- outbox --> MQ[[RabbitMQ]]
+    MQ -- user.created, ... --> A
+    You((You)) -- VPN / SSH tunnel --> AD
+```
+
+- **Clients** talk to Warden only to sign in, refresh and manage their account.
+- **Your APIs never call Warden per request.** They verify the access token signature with the cached JWKS, which costs microseconds and keeps working if Warden is briefly down.
+- **Events** let other services react (create a profile on `user.created`, clean up on `user.deleted`).
+- **The admin port is private.** It is bound to `127.0.0.1` in Compose; in production reach it through a VPN, an SSH tunnel or your cluster network.
+
+Run **one Warden instance per product** (its own database and Redis DB). Users, keys and settings are then fully isolated between products, the same model Clerk uses for "instances".
+
+## Admin UI
+
+The admin UI is how you configure an instance: switch features and providers on or off, paste provider keys, and look after users. It is server rendered, has no external dependencies and works on a phone.
+
+| Settings | Users |
+| --- | --- |
+| ![Settings](docs/images/admin-settings.png) | ![User detail](docs/images/admin-user.png) |
+
+- **Settings**: sign-ups, email verification, breached password check, password length, lockout, app name, email links, redirect URIs, CORS origins. Applied to every replica within 15 seconds.
+- **Sign-in providers**: enable Google, Apple, GitHub or Discord and paste their credentials. The page shows the exact callback URL to register with each provider. Secrets are encrypted at rest and never displayed again.
+- **Users**: search, sessions per device, security log, roles, disable, sign out everywhere.
+- **Signing keys**: current key, rotation schedule, rotate now.
+- **Integrate**: issuer, audience, JWKS URL and copy-paste verification snippets for this instance.
+
+Environment variables are the defaults; values saved in the UI override them and can be reset. Connections and secrets (database, Redis, S3, SMTP, encryption key) stay in the environment on purpose: they hold credentials and need a restart.
+
+Access is protected by `ADMIN_TOKEN` (32+ characters). Sessions are HttpOnly, `SameSite=Strict`, CSRF protected, bound to the current token (rotating the token signs every admin out), and every action is written to the audit log. Leave `ADMIN_TOKEN` empty to disable the UI entirely; `/metrics` and `/healthz` stay available on that port.
+
+## Using Warden from your apps
+
+The short version for an Express API:
+
+```js
+import { createRemoteJWKSet, jwtVerify } from "jose";
+
+const JWKS = createRemoteJWKSet(new URL("https://auth.example.com/.well-known/jwks.json"));
+
+export async function requireAuth(req, res, next) {
+  try {
+    const token = req.headers.authorization?.replace(/^Bearer /i, "");
+    const { payload } = await jwtVerify(token, JWKS, {
+      issuer: "https://auth.example.com",
+      audience: "warden",
+      algorithms: ["ES256"],
+      typ: "at+jwt",
+    });
+    req.user = { id: payload.sub, roles: payload.roles ?? [] };
+    next();
+  } catch {
+    res.status(401).json({ error: "invalid_token" });
+  }
+}
+```
+
+[docs/integration.md](docs/integration.md) covers the rest: web apps (cookie mode), mobile apps (PKCE browser flow and native Apple/Google), refresh handling, consuming events, the gRPC client and setting up each identity provider.
+
+## API overview
+
+Full schema: [api/openapi.yaml](api/openapi.yaml). Errors always look like `{"error": {"code": "invalid_credentials", "message": "...", "request_id": "..."}}`.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/v1/auth/providers` | Enabled sign-in methods and public settings |
+| POST | `/v1/auth/signup` | Create a password account |
+| POST | `/v1/auth/signin` | Sign in; may answer `mfa_required` |
+| POST | `/v1/auth/mfa/verify` | Complete sign-in with a TOTP or recovery code |
+| POST | `/v1/auth/refresh` | Rotate the refresh token, get a new access token |
+| POST | `/v1/auth/signout` | Revoke the current session |
+| POST | `/v1/auth/email/verify` | Confirm an email address |
+| POST | `/v1/auth/password/forgot` | Send a reset link (always 202) |
+| POST | `/v1/auth/password/reset` | Set a new password with a reset token |
+| GET | `/v1/oauth/{provider}/authorize` | Start social sign-in (PKCE) |
+| GET/POST | `/v1/oauth/{provider}/callback` | Provider callback (POST for Apple) |
+| POST | `/v1/oauth/token` | Exchange the one-time login code for tokens |
+| POST | `/v1/oauth/{provider}/native` | Native Apple/Google ID token sign-in |
+| GET, PATCH, DELETE | `/v1/me` | Profile, update name, delete account |
+| POST | `/v1/me/password` | Change or set password |
+| POST | `/v1/me/email/resend` | Resend verification email |
+| PUT, DELETE | `/v1/me/avatar` | Upload (multipart `file` or raw body) or remove avatar |
+| GET, DELETE | `/v1/me/sessions[/{id}]` | List sessions, sign out one or all other devices |
+| GET, DELETE | `/v1/me/identities[/{provider}]` | Linked social accounts |
+| POST | `/v1/me/mfa/totp/setup`, `/enable`, `/disable` | Manage two-factor authentication |
+| POST | `/v1/me/mfa/recovery-codes` | Regenerate recovery codes |
+| GET | `/.well-known/jwks.json`, `/.well-known/openid-configuration` | Public keys and discovery |
+| GET | `/healthz`, `/readyz` | Liveness and readiness |
+
+**Access token claims**: `iss`, `sub` (user id), `aud`, `exp`, `iat`, `nbf`, `jti`, `sid` (session id), `email`, `email_verified`, `roles`, `amr` (how the user authenticated, e.g. `pwd`, `mfa`, `oauth:google`).
+
+**gRPC** (`warden.v1.AuthService`, port 9091, `x-api-key` metadata): `VerifyAccessToken`, `GetUser`, `GetUsers`, `SetUserRoles`, `SetUserDisabled`, `RevokeUserSessions`. Generated Go client: `github.com/fatihacan1/warden/pkg/api/wardenv1`; proto: [api/proto](api/proto).
+
+**Events** (RabbitMQ topic exchange `warden.events`, routing key = type): `user.created`, `user.updated`, `user.deleted`, `user.email_verified`, `user.password_changed`, `user.signed_in`, `user.disabled`, `user.enabled`, `user.mfa_enabled`, `user.mfa_disabled`, `identity.linked`, `identity.unlinked`, `session.revoked`. Delivery is at-least-once; deduplicate on the event `id`.
+
+## Configuration
+
+Every option is documented in [.env.example](.env.example). The most important ones:
+
+| Variable | Purpose |
+| --- | --- |
+| `HTTP_PUBLIC_URL` | External URL; also the token issuer and the base of OAuth callback URLs |
+| `ENCRYPTION_KEY` | 32 bytes, base64. Encrypts signing keys, TOTP seeds, provider secrets and queued emails |
+| `ADMIN_TOKEN` | Enables the admin UI |
+| `DATABASE_URL`, `REDIS_URL` | Required dependencies |
+| `S3_*`, `RABBITMQ_URL`, `SMTP_*` | Optional: avatars, events, real email delivery |
+| `AUTH_ALLOWED_REDIRECT_URIS`, `HTTP_CORS_ALLOWED_ORIGINS` | Where your apps live (also editable in the admin UI) |
+| `TOKEN_ACCESS_TTL`, `TOKEN_REFRESH_TTL`, `TOKEN_SESSION_MAX_AGE` | Token and session lifetimes |
+| `HTTP_TRUSTED_PROXIES` | Your load balancer ranges, so client IPs (and rate limits) are correct |
+
+Configuration is validated at startup. Unsafe combinations are rejected with a clear message instead of starting in an insecure state, for example zero TTLs, wildcard CORS with credentials, plain HTTP or non-secure cookies in production, and development secrets in production.
+
+## Security model
+
+| Threat | Mitigation |
+| --- | --- |
+| Password database leak | Argon2id (19 MiB, t=2), per-user salt, automatic rehash when parameters increase |
+| Credential stuffing, brute force | Per-IP rate limits, per-account lockout independent of IP, optional breached-password blocklist |
+| Account enumeration | Identical errors and Argon2 cost for unknown accounts; forgot-password always returns 202 |
+| Stolen refresh token | Rotation on every use; replaying an old token revokes the whole session (RFC 9700) |
+| Stolen access token | 15 minute lifetime; revoked sessions are rejected immediately by online checks |
+| JWT forgery (`alg=none`, key confusion, foreign keys, ID tokens as access tokens) | Algorithm pinned to ES256, `kid` must be a published key, `typ` must be `at+jwt`, issuer and audience checked |
+| OAuth code interception, login CSRF | Server-side single-use state, PKCE on the app leg, exact-match redirect allowlist, nonce for ID tokens |
+| Pre-account takeover via social sign-in | Links only provider-verified emails; an unverified existing account loses its password and sessions when the real owner signs in |
+| ID token replay (native sign-in) | Nonce required and single-use |
+| CSRF on cookie mode | Refresh cookie only honored with the `X-Auth-Mode: cookie` header; JSON-only bodies |
+| Malicious avatar uploads | Size and pixel limits (decompression bombs), decoded and re-encoded as JPEG (strips EXIF and polyglots) |
+| Secrets at rest | AES-256-GCM with per-record associated data for signing keys, TOTP seeds, provider secrets, queued emails |
+| Admin panel | Private port, token login with rate limit, `SameSite=Strict`, CSRF tokens, origin check, strict CSP, audit log |
+
+Verification: unit tests, an integration suite that attacks the running service (token forgery, PKCE bypass, redirect tricks, CSRF, reuse, lockout, enumeration), `govulncheck`, `gosec` and Semgrep in CI. See [SECURITY.md](SECURITY.md) to report a vulnerability.
+
+## Performance and resilience
+
+Warden is stateless and scales horizontally behind a load balancer. Under overload it slows down and sheds work; it does not fall over.
+
+- **Bounded password hashing.** Argon2id allocates 19 MiB per hash. A semaphore caps concurrent hashes (default 2 x CPU); requests that cannot get a slot within 3 s receive `503` with `Retry-After` instead of exhausting memory.
+- **Load shedding.** Above `HTTP_MAX_IN_FLIGHT` concurrent requests the API answers `503` immediately.
+- **Timeouts everywhere.** Read, write and idle timeouts on the server; a per-request deadline; a Postgres `statement_timeout`; strict Redis and outbound HTTP timeouts.
+- **Graceful degradation.** Redis outages fail open for rate limits (configurable). RabbitMQ and SMTP outages are absorbed by the durable outbox and retried with backoff. S3 outages only affect avatar uploads.
+- **Background work on one replica.** Key rotation and cleanup use Postgres advisory locks; the outbox uses `FOR UPDATE SKIP LOCKED`, so any number of replicas can run safely.
+
+Local k6 run ([loadtest/auth.js](loadtest/auth.js)) on a 12-core laptop, all services in Docker: 21,300 requests in 45 s, 0 errors, `/v1/me` p95 of 80 ms while password sign-ins ramped to 150 per second.
+
+## Observability
+
+- **Metrics** on `:9090/metrics` (Prometheus): request rate and latency per route, in-flight requests, shed requests, auth events by result (`sign_in` success/invalid/locked, `refresh` reuse_detected, ...), rate-limit rejections, Argon2 wait and compute time, outbox backlog and dead letters, gRPC calls.
+- **Logs**: structured JSON (`LOG_FORMAT=json`) with request ids. Tokens, passwords and query strings are never logged.
+- **Errors**: set `SENTRY_DSN` to report panics and unexpected errors; cookies, auth headers and request bodies are scrubbed first.
+- **Probes**: `/healthz` (process alive) and `/readyz` (Postgres and Redis reachable).
+
+## Development
+
+```bash
+docker compose up -d postgres redis rabbitmq garage garage-init mailpit
+go run ./cmd/warden                 # reads .env
+
+go test ./...                                         # unit tests
+go test -tags integration ./test/e2e/ -count=1        # integration tests against the compose stack
+```
+
+`make help` lists shortcuts (lint, proto generation, image build, load test). Regenerate gRPC code with `buf generate` after editing `api/proto`.
+
+Commands of the binary: `warden serve` (default), `warden migrate [status]`, `warden keygen`, `warden healthcheck`, `warden version`.
+
+For production deployment, scaling and the go-live checklist see [docs/production.md](docs/production.md).
+
+## Project layout
+
+```
+cmd/warden/            entrypoint and CLI commands
+internal/app/          wiring, lifecycle, background jobs
+internal/auth/         business logic: sign-in, sessions, MFA, OAuth linking, account
+internal/oauth/        identity providers (one file each), flow state, registry
+internal/token/        ES256 JWTs, signing key rotation, JWKS
+internal/settings/     runtime feature toggles edited from the admin UI
+internal/store/        PostgreSQL queries
+internal/events/       transactional outbox and relay
+internal/transport/    httpapi (public REST), grpcapi (internal), admin (UI)
+internal/crypto/       Argon2id hasher, AES-GCM secret box, random tokens
+internal/platform/     Postgres, Redis, S3, RabbitMQ adapters
+migrations/            SQL migrations, embedded in the binary
+api/                   OpenAPI spec and protobuf definitions
+pkg/api/wardenv1/      generated gRPC client for Go services
+test/e2e/              integration and attack tests
+deploy/                local Garage setup
+```
+
+## Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md); report security issues privately as described in [SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE)

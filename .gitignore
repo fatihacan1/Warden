@@ -1,0 +1,21 @@
+# Binaries and build output
+bin/
+dist/
+*.exe
+*.test
+coverage.*
+
+# Local configuration (secrets)
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Tooling output
+.playwright-cli/
+output/

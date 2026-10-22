@@ -1,0 +1,44 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>{{.Title}} · Warden admin</title>
+<link rel="icon" href="/admin/static/mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/admin/static/admin.css?v={{.Assets}}">
+<script src="/admin/static/admin.js?v={{.Assets}}" defer></script>
+</head>
+<body>
+{{if .Nav}}
+<header class="topbar">
+  <a class="brand" href="/admin"><img src="/admin/static/mark.svg" alt="" width="20" height="20"> Warden</a>
+  <span class="env env-{{.Env}}">{{.Env}}</span>
+  <nav class="nav nav-desktop" aria-label="Admin">{{template "navlinks" .}}</nav>
+  <details class="menu">
+    <summary aria-label="Open navigation">Menu</summary>
+    <nav class="nav nav-mobile" aria-label="Admin">{{template "navlinks" .}}</nav>
+  </details>
+</header>
+{{end}}
+<main class="page{{if not .Nav}} page-narrow{{end}}">
+  {{if .Flash}}<p class="notice notice-ok" role="status">{{.Flash}}</p>{{end}}
+  {{if .Error}}<p class="notice notice-err" role="alert">{{.Error}}</p>{{end}}
+  {{template "content" .}}
+</main>
+{{if .Nav}}<footer class="foot">Warden {{.Version}}</footer>{{end}}
+</body>
+</html>{{end}}
+
+{{define "navlinks"}}
+      <a href="/admin" {{if eq .Nav "overview"}}aria-current="page"{{end}}>Overview</a>
+      <a href="/admin/settings" {{if eq .Nav "settings"}}aria-current="page"{{end}}>Settings</a>
+      <a href="/admin/providers" {{if eq .Nav "providers"}}aria-current="page"{{end}}>Sign-in providers</a>
+      <a href="/admin/users" {{if eq .Nav "users"}}aria-current="page"{{end}}>Users</a>
+      <a href="/admin/keys" {{if eq .Nav "keys"}}aria-current="page"{{end}}>Signing keys</a>
+      <a href="/admin/setup" {{if eq .Nav "setup"}}aria-current="page"{{end}}>Integrate</a>
+      <form method="post" action="/admin/logout" class="nav-logout">
+        <input type="hidden" name="_csrf" value="{{.CSRF}}">
+        <button type="submit" class="link">Sign out</button>
+      </form>
+{{end}}

@@ -1,0 +1,104 @@
+{{define "content"}}{{$csrf := .CSRF}}{{with .Data}}{{$s := .S}}
+<div class="head">
+  <div>
+    <h1>Settings</h1>
+    <p class="lede">Turn features on or off and adjust policies. Saved changes apply to every replica within 15 seconds, without a restart.</p>
+  </div>
+  <span class="tag {{if .Overridden}}tag-accent{{end}}">{{if .Overridden}}Saved here {{date .Since}}{{else}}Using environment values{{end}}</span>
+</div>
+
+<form method="post" action="/admin/settings" class="stack">
+  <input type="hidden" name="_csrf" value="{{$csrf}}">
+
+  <section class="panel">
+    <header><h2>Sign-up and sign-in</h2></header>
+    <div class="panel-body">
+      <div class="toggle-row">
+        <div>
+          <h3>Allow sign-ups</h3>
+          <p class="help">When off, nobody can create a new account, with a password or with a social provider. Existing users can still sign in.</p>
+        </div>
+        <label class="switch"><input type="checkbox" name="allow_signup" {{if $s.AllowSignup}}checked{{end}} aria-label="Allow sign-ups"></label>
+      </div>
+      <div class="toggle-row">
+        <div>
+          <h3>Require email verification</h3>
+          <p class="help">Password users must click the link in their verification email before they can sign in.</p>
+        </div>
+        <label class="switch"><input type="checkbox" name="require_email_verification" {{if $s.RequireEmailVerification}}checked{{end}} aria-label="Require email verification"></label>
+      </div>
+      <div class="toggle-row">
+        <div>
+          <h3>Block breached passwords</h3>
+          <p class="help">Checks new passwords against Have I Been Pwned. Only the first 5 characters of a SHA-1 hash leave the server. Needs outbound internet.</p>
+        </div>
+        <label class="switch"><input type="checkbox" name="check_breached_passwords" {{if $s.CheckBreachedPasswords}}checked{{end}} aria-label="Block breached passwords"></label>
+      </div>
+      <div class="provider-grid">
+        <div class="field">
+          <label for="password_min_length">Minimum password length</label>
+          <input id="password_min_length" name="password_min_length" type="text" inputmode="numeric" value="{{$s.PasswordMinLength}}">
+          <p class="help">8 to 64. Applies to new and changed passwords.</p>
+        </div>
+        <div class="field">
+          <label for="lockout_threshold">Failed attempts before lockout</label>
+          <input id="lockout_threshold" name="lockout_threshold" type="text" inputmode="numeric" value="{{$s.LockoutThreshold}}">
+          <p class="help">3 to 100. The account is locked for the lockout window after this many wrong passwords.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <header><h2>Apps that use this instance</h2></header>
+    <div class="panel-body provider-grid">
+      <div class="field">
+        <label for="allowed_redirect_uris">Allowed redirect URIs</label>
+        <textarea id="allowed_redirect_uris" name="allowed_redirect_uris" spellcheck="false" placeholder="https://app.example.com/auth/callback&#10;myapp://auth/callback">{{join $s.AllowedRedirectURIs "\n"}}</textarea>
+        <p class="help">One per line. Social sign-in returns only to these exact URIs (web pages or mobile app schemes).</p>
+      </div>
+      <div class="field">
+        <label for="cors_origins">Browser origins (CORS)</label>
+        <textarea id="cors_origins" name="cors_origins" spellcheck="false" placeholder="https://app.example.com">{{join $s.CORSOrigins "\n"}}</textarea>
+        <p class="help">One per line. Web apps on these origins may call the API from the browser. Mobile and server apps need nothing here.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <header><h2>Emails</h2></header>
+    <div class="panel-body">
+      <div class="field">
+        <label for="app_name">App name</label>
+        <input id="app_name" name="app_name" type="text" value="{{$s.AppName}}">
+        <p class="help">Shown in email subjects and in authenticator apps.</p>
+      </div>
+      <div class="provider-grid">
+        <div class="field">
+          <label for="verify_email_url">Verification link</label>
+          <input id="verify_email_url" name="verify_email_url" type="text" spellcheck="false" value="{{$s.VerifyEmailURL}}">
+          <p class="help">A page in your app that posts the <code>{token}</code> to <code>/v1/auth/email/verify</code>.</p>
+        </div>
+        <div class="field">
+          <label for="reset_password_url">Password reset link</label>
+          <input id="reset_password_url" name="reset_password_url" type="text" spellcheck="false" value="{{$s.ResetPasswordURL}}">
+          <p class="help">A page in your app that asks for a new password and posts it with the <code>{token}</code>.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="row">
+    <button class="btn btn-primary" type="submit">Save settings</button>
+  </div>
+</form>
+
+{{if .Overridden}}
+<form method="post" action="/admin/settings/reset" class="mt-20" data-confirm="Discard the settings saved here and use the environment values again?">
+  <input type="hidden" name="_csrf" value="{{$csrf}}">
+  <button class="btn btn-small" type="submit">Reset to environment values</button>
+</form>
+{{end}}
+
+<p class="help mt-20">Connections (database, Redis, S3, RabbitMQ, SMTP), secrets and rate limiting stay in environment variables: they hold credentials or need a restart.</p>
+{{end}}{{end}}

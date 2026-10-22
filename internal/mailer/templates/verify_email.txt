@@ -1,0 +1,8 @@
+{{define "verify_email.txt"}}Confirm your email address
+
+Open the link below to verify the email address for your {{.AppName}} account:
+
+{{.Data.Link}}
+
+This link expires in {{.Data.ExpiresIn}}. If you did not create an account, you can ignore this email.
+{{end}}

@@ -1,0 +1,93 @@
+{{define "content"}}{{with .Data}}
+<div class="head">
+  <div>
+    <h1>Integrate an app</h1>
+    <p class="lede">Values for this instance. Your backends verify access tokens offline; they never need to call Warden on each request.</p>
+  </div>
+</div>
+
+<div class="grid grid-main">
+  <div class="stack">
+    <section class="panel">
+      <header><h2>1. Verify tokens in your backend</h2></header>
+      <div class="panel-body">
+        <p>Node.js / Express with <code>jose</code>:</p>
+<pre>import { createRemoteJWKSet, jwtVerify } from "jose";
+
+const JWKS = createRemoteJWKSet(new URL("{{.JWKS}}"));
+
+export async function requireAuth(req, res, next) {
+  const token = req.headers.authorization?.replace(/^Bearer /i, "");
+  if (!token) return res.status(401).json({ error: "unauthorized" });
+  try {
+    const { payload } = await jwtVerify(token, JWKS, {
+      issuer: "{{.Issuer}}",
+      audience: "{{.Audience}}",
+      algorithms: ["ES256"],
+      typ: "at+jwt",
+    });
+    req.user = { id: payload.sub, sessionId: payload.sid, roles: payload.roles ?? [] };
+    next();
+  } catch {
+    res.status(401).json({ error: "invalid_token" });
+  }
+}</pre>
+        <p>Go with <code>github.com/MicahParks/keyfunc/v3</code> and <code>golang-jwt/jwt/v5</code>:</p>
+<pre>jwks, _ := keyfunc.NewDefault([]string{"{{.JWKS}}"})
+token, err := jwt.Parse(raw, jwks.Keyfunc,
+    jwt.WithValidMethods([]string{"ES256"}),
+    jwt.WithIssuer("{{.Issuer}}"),
+    jwt.WithAudience("{{.Audience}}"))</pre>
+        {{if .GRPC}}<p>Need instant revocation for a sensitive action? Call <code>warden.v1.AuthService/VerifyAccessToken</code> over gRPC on <code>{{.GRPCAddr}}</code> with <code>check_session: true</code>.</p>{{end}}
+      </div>
+    </section>
+
+    <section class="panel">
+      <header><h2>2. Sign users in</h2></header>
+      <div class="panel-body">
+        <h3>Email and password</h3>
+        <ol class="steps">
+          <li><code>POST {{.PublicURL}}/v1/auth/signup</code> or <code>/v1/auth/signin</code> with <code>{"email","password"}</code>.</li>
+          <li>If the response status is <code>mfa_required</code>, post the code to <code>/v1/auth/mfa/verify</code>.</li>
+          <li>Refresh with <code>POST /v1/auth/refresh</code>. Each refresh token works once; always store the new one.</li>
+        </ol>
+        <h3>Social sign-in (web and mobile)</h3>
+        <ol class="steps">
+          <li>Create a PKCE verifier and its S256 challenge in the app.</li>
+          <li>Open <code>{{.PublicURL}}/v1/oauth/&lt;provider&gt;/authorize?redirect_uri=…&amp;code_challenge=…&amp;code_challenge_method=S256&amp;state=…</code> (browser, ASWebAuthenticationSession or Custom Tabs).</li>
+          <li>Your redirect URI receives <code>?code=…&amp;state=…</code>. Exchange it at <code>POST /v1/oauth/token</code> with <code>code</code>, <code>code_verifier</code> and <code>redirect_uri</code>.</li>
+        </ol>
+        <h3>Native Apple and Google</h3>
+        <p>Send the ID token from the platform SDK to <code>POST /v1/oauth/apple/native</code> or <code>/v1/oauth/google/native</code> with <code>{"id_token","nonce"}</code>, where <code>nonce</code> is the raw nonce you generated (16+ chars).</p>
+        <h3>Browser apps</h3>
+        <p>Send <code>X-Auth-Mode: cookie</code> to receive the refresh token as an HttpOnly cookie instead of in the JSON body, and keep the access token in memory only.</p>
+      </div>
+    </section>
+  </div>
+
+  <div class="stack">
+    <section class="panel">
+      <header><h2>Values</h2></header>
+      <div class="panel-body">
+        <label>Issuer</label>
+        <div class="copy"><code>{{.Issuer}}</code><button type="button" class="btn btn-small" data-copy="{{.Issuer}}">Copy</button></div>
+        <label>Audience</label>
+        <div class="copy"><code>{{.Audience}}</code><button type="button" class="btn btn-small" data-copy="{{.Audience}}">Copy</button></div>
+        <label>JWKS URL</label>
+        <div class="copy"><code>{{.JWKS}}</code><button type="button" class="btn btn-small" data-copy="{{.JWKS}}">Copy</button></div>
+      </div>
+    </section>
+    <section class="panel">
+      <header><h2>Checklist</h2></header>
+      <div class="panel-body">
+        <dl class="kv">
+          <dt>Redirect URIs</dt><dd>{{range .Redirects}}<code>{{.}}</code><br>{{else}}<span class="tag tag-err">None set</span>{{end}}</dd>
+          <dt>CORS origins</dt><dd>{{range .CORS}}<code>{{.}}</code><br>{{else}}<span class="muted">None (mobile/server only)</span>{{end}}</dd>
+          <dt>Providers</dt><dd>{{range .Providers}}<span class="tag tag-ok">{{.DisplayName}}</span> {{else}}<a href="/admin/providers">Enable one</a>{{end}}</dd>
+          <dt>Events</dt><dd>{{if .Events}}Exchange <code>{{.Exchange}}</code>, routing keys like <code>user.created</code>{{else}}<span class="muted">RabbitMQ off</span>{{end}}</dd>
+        </dl>
+      </div>
+    </section>
+  </div>
+</div>
+{{end}}{{end}}

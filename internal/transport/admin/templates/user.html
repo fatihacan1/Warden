@@ -1,0 +1,95 @@
+{{define "content"}}{{$csrf := .CSRF}}{{with .Data}}{{$u := .User}}
+<div class="head">
+  <div>
+    <p class="muted crumb"><a href="/admin/users">Users</a></p>
+    <h1>{{if $u.Email}}{{$u.Email}}{{else}}{{$u.ID}}{{end}}</h1>
+    <p class="lede row">
+      {{if $u.Disabled}}<span class="tag tag-err">Disabled</span>{{end}}
+      {{if $u.EmailVerified}}<span class="tag tag-ok">Email verified</span>{{else if $u.Email}}<span class="tag tag-warn">Email unverified</span>{{end}}
+      {{if $u.MFAEnabled}}<span class="tag">Two-factor on</span>{{end}}
+    </p>
+  </div>
+  <div class="row">
+    <form class="inline-form" method="post" action="/admin/users/{{$u.ID}}/revoke" data-confirm="Sign this user out of every device?">
+      <input type="hidden" name="_csrf" value="{{$csrf}}">
+      <button class="btn" type="submit">Sign out everywhere</button>
+    </form>
+    {{if $u.Disabled}}
+    <form class="inline-form" method="post" action="/admin/users/{{$u.ID}}/enable">
+      <input type="hidden" name="_csrf" value="{{$csrf}}">
+      <button class="btn btn-primary" type="submit">Enable account</button>
+    </form>
+    {{else}}
+    <form class="inline-form" method="post" action="/admin/users/{{$u.ID}}/disable" data-confirm="Disable this account? The user is signed out immediately and cannot sign in.">
+      <input type="hidden" name="_csrf" value="{{$csrf}}">
+      <button class="btn btn-danger" type="submit">Disable account</button>
+    </form>
+    {{end}}
+  </div>
+</div>
+
+<div class="grid grid-main">
+  <div class="stack">
+    <section class="panel">
+      <header><h2>Active sessions</h2><span class="muted num">{{len .Sessions}}</span></header>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Device</th><th>Method</th><th class="hide-sm">IP</th><th>Last used</th></tr></thead>
+          <tbody>
+          {{range .Sessions}}
+            <tr><td>{{if .UserAgent}}{{printf "%.70s" .UserAgent}}{{else}}<span class="muted">Unknown</span>{{end}}</td><td><code>{{join .AMR " "}}</code></td><td class="hide-sm mono">{{.IP}}</td><td class="num" title="{{date .LastUsedAt}}">{{ago .LastUsedAt}}</td></tr>
+          {{else}}
+            <tr><td colspan="4" class="muted">No active sessions.</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section class="panel">
+      <header><h2>Security log</h2></header>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Event</th><th class="hide-sm">IP</th><th>When</th></tr></thead>
+          <tbody>
+          {{range .Audit}}
+            <tr><td><code>{{.Type}}</code></td><td class="hide-sm mono">{{.IP}}</td><td class="num" title="{{date .CreatedAt}}">{{ago .CreatedAt}}</td></tr>
+          {{else}}
+            <tr><td colspan="3" class="muted">No events.</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="stack">
+    <section class="panel">
+      <header><h2>Profile</h2></header>
+      <div class="panel-body">
+        {{if .AvatarURL}}<img src="{{.AvatarURL}}" alt="" width="64" height="64" class="avatar">{{end}}
+        <dl class="kv">
+          <dt>ID</dt><dd class="mono">{{$u.ID}}</dd>
+          <dt>Name</dt><dd>{{if $u.Name}}{{$u.Name}}{{else}}<span class="muted">-</span>{{end}}</dd>
+          <dt>Password</dt><dd>{{if $u.HasPassword}}Set{{else}}None (social only){{end}}</dd>
+          <dt>Recovery codes</dt><dd class="num">{{if $u.MFAEnabled}}{{.RecoveryCodes}} unused{{else}}-{{end}}</dd>
+          <dt>Created</dt><dd class="num">{{date $u.CreatedAt}}</dd>
+          <dt>Last sign-in</dt><dd class="num">{{date $u.LastSignInAt}}</dd>
+          <dt>Linked</dt><dd>{{range .Identities}}<span class="tag">{{.Provider}}</span> {{else}}<span class="muted">None</span>{{end}}</dd>
+        </dl>
+      </div>
+    </section>
+    <section class="panel">
+      <header><h2>Roles</h2></header>
+      <form class="panel-body" method="post" action="/admin/users/{{$u.ID}}/roles">
+        <input type="hidden" name="_csrf" value="{{$csrf}}">
+        <div class="field">
+          <label for="roles">Comma separated</label>
+          <input id="roles" name="roles" type="text" value="{{join $u.Roles ", "}}" placeholder="admin, editor" spellcheck="false">
+          <p class="help">Included in the <code>roles</code> claim of access tokens after the next refresh.</p>
+        </div>
+        <button class="btn" type="submit">Save roles</button>
+      </form>
+    </section>
+  </div>
+</div>
+{{end}}{{end}}

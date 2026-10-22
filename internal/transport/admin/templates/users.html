@@ -1,0 +1,44 @@
+{{define "content"}}{{with .Data}}
+<div class="head">
+  <div>
+    <h1>Users</h1>
+    <p class="lede"><span class="num">{{.Total}}</span> {{if .Query}}matching “{{.Query}}”{{else}}accounts{{end}}</p>
+  </div>
+</div>
+<form class="search" method="get" action="/admin/users" role="search">
+  <input type="search" name="q" value="{{.Query}}" placeholder="Email, name or user id" aria-label="Search users">
+  <button class="btn" type="submit">Search</button>
+</form>
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Email</th><th class="hide-sm">Name</th><th>Status</th><th class="hide-sm">Created</th><th class="hide-sm">Last sign-in</th></tr></thead>
+      <tbody>
+      {{range .Users}}
+        <tr>
+          <td><a href="/admin/users/{{.ID}}">{{if .Email}}{{.Email}}{{else}}<span class="mono">{{.ID}}</span>{{end}}</a></td>
+          <td class="hide-sm">{{.Name}}</td>
+          <td class="row">
+            {{if .Disabled}}<span class="tag tag-err">Disabled</span>{{end}}
+            {{if .EmailVerified}}<span class="tag tag-ok">Verified</span>{{else if .Email}}<span class="tag tag-warn">Unverified</span>{{end}}
+            {{if .MFAEnabled}}<span class="tag">2FA</span>{{end}}
+            {{range .Roles}}<span class="tag tag-accent">{{.}}</span>{{end}}
+          </td>
+          <td class="hide-sm num">{{date .CreatedAt}}</td>
+          <td class="hide-sm num">{{date .LastSignInAt}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="5" class="muted">No users found.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{if gt .Pages 1}}
+<div class="row mt-16">
+  {{if .HasPrev}}<a class="btn btn-small" href="/admin/users?q={{.Query}}&page={{sub .Page 1}}">Previous</a>{{end}}
+  <span class="muted num">Page {{.Page}} of {{.Pages}}</span>
+  {{if .HasNext}}<a class="btn btn-small" href="/admin/users?q={{.Query}}&page={{add .Page 1}}">Next</a>{{end}}
+</div>
+{{end}}
+{{end}}{{end}}
