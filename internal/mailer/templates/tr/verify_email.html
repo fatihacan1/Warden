@@ -1,0 +1,7 @@
+{{template "layout_start" .}}
+<h1 style="font-size:20px;margin:0 0 12px">E-posta adresinizi doğrulayın</h1>
+<p style="margin:0 0 8px">{{.AppName}} hesabınızın e-posta adresini doğrulamak için aşağıdaki düğmeyi kullanın.</p>
+<p style="margin:24px 0"><a href="{{.Data.Link}}" style="display:inline-block;background:#1d1d1b;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:6px;font-weight:600">E-postamı doğrula</a></p>
+<p style="margin:0 0 8px;color:#55554f;font-size:13px">Bu bağlantı {{.Data.ExpiresIn}} geçerlidir. Hesap oluşturmadıysanız bu e-postayı yok sayabilirsiniz.</p>
+<p style="margin:16px 0 0;color:#77776f;font-size:12px;word-break:break-all">{{.Data.Link}}</p>
+{{template "layout_end" .}}

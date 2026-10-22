@@ -170,6 +170,7 @@ func (s *Store) RetryDelivery(ctx context.Context, topic string, id int64) error
 
 type EmailTemplateRow struct {
 	Name      string
+	Locale    string
 	Subject   string
 	HTML      string
 	Text      string
@@ -177,7 +178,7 @@ type EmailTemplateRow struct {
 }
 
 func (s *Store) ListEmailTemplates(ctx context.Context) ([]EmailTemplateRow, error) {
-	rows, err := s.db.Query(ctx, `SELECT name, subject, html, text, updated_at FROM email_templates`)
+	rows, err := s.db.Query(ctx, `SELECT name, locale, subject, html, text, updated_at FROM email_templates`)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +186,7 @@ func (s *Store) ListEmailTemplates(ctx context.Context) ([]EmailTemplateRow, err
 	var out []EmailTemplateRow
 	for rows.Next() {
 		var r EmailTemplateRow
-		if err := rows.Scan(&r.Name, &r.Subject, &r.HTML, &r.Text, &r.UpdatedAt); err != nil {
+		if err := rows.Scan(&r.Name, &r.Locale, &r.Subject, &r.HTML, &r.Text, &r.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -195,14 +196,14 @@ func (s *Store) ListEmailTemplates(ctx context.Context) ([]EmailTemplateRow, err
 
 func (s *Store) SaveEmailTemplate(ctx context.Context, r EmailTemplateRow) error {
 	_, err := s.db.Exec(ctx, `
-		INSERT INTO email_templates (name, subject, html, text, updated_at) VALUES ($1, $2, $3, $4, now())
-		ON CONFLICT (name) DO UPDATE SET subject = EXCLUDED.subject, html = EXCLUDED.html, text = EXCLUDED.text, updated_at = now()`,
-		r.Name, r.Subject, r.HTML, r.Text)
+		INSERT INTO email_templates (name, locale, subject, html, text, updated_at) VALUES ($1, $2, $3, $4, $5, now())
+		ON CONFLICT (name, locale) DO UPDATE SET subject = EXCLUDED.subject, html = EXCLUDED.html, text = EXCLUDED.text, updated_at = now()`,
+		r.Name, r.Locale, r.Subject, r.HTML, r.Text)
 	return err
 }
 
-func (s *Store) DeleteEmailTemplate(ctx context.Context, name string) error {
-	_, err := s.db.Exec(ctx, `DELETE FROM email_templates WHERE name = $1`, name)
+func (s *Store) DeleteEmailTemplate(ctx context.Context, name, locale string) error {
+	_, err := s.db.Exec(ctx, `DELETE FROM email_templates WHERE name = $1 AND locale = $2`, name, locale)
 	return err
 }
 

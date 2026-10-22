@@ -250,7 +250,7 @@ func (s *Service) resolveIdentity(ctx context.Context, id *oauth.Identity, meta 
 		if !s.Settings.Get().AllowSignup {
 			return domain.ErrSignupDisabled
 		}
-		user = &domain.User{ID: uuid.Must(uuid.NewV7()), Name: cleanName(id.Name), Roles: []string{}}
+		user = &domain.User{ID: uuid.Must(uuid.NewV7()), Name: cleanName(id.Name), Roles: []string{}, Locale: firstLocale(meta.Locale)}
 		if emailOK {
 			user.Email = email
 			if id.EmailVerified {

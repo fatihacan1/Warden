@@ -21,6 +21,7 @@ import (
 	"github.com/wneessen/go-mail"
 
 	"github.com/fatihacan1/warden/internal/config"
+	"github.com/fatihacan1/warden/internal/i18n"
 )
 
 // Message is a rendered email.
@@ -42,6 +43,8 @@ const (
 	TemplateResetPassword   = "reset_password"
 	TemplatePasswordChanged = "password_changed"
 	TemplateMFAChanged      = "mfa_changed"
+	TemplateNewDevice       = "new_device"
+	TemplateAccountLocked   = "account_locked"
 	// LayoutName is the shared HTML frame. It must define "layout_start" and
 	// "layout_end"; templates call them with {{template "layout_start" .}}.
 	LayoutName = "layout"
@@ -72,6 +75,14 @@ var Templates = []Info{
 	{TemplateMFAChanged, "Two-factor changed", "Security notice when two-factor authentication is turned on or off.",
 		map[string]string{"Action": "enabled or disabled", "When": "Date and time of the change (UTC)"},
 		map[string]string{"Action": "enabled", "When": "Thu, 22 Oct 2026 10:00:00 UTC"}},
+	{TemplateNewDevice, "New device sign-in", "Security notice the first time an account signs in from a device it has not used before. Turn it off in Settings.",
+		map[string]string{"Device": "Browser and OS, e.g. Chrome on Windows", "IP": "IP address of the sign-in", "Location": "Country, when a proxy like Cloudflare reports it (may be empty)",
+			"Method": "How they signed in: Password, Google, ...", "When": "Date and time (UTC)", "SignOutLink": "Link that ends that session (may be empty)"},
+		map[string]string{"Device": "Chrome on Windows", "IP": "203.0.113.24", "Location": "TR", "Method": "Password", "When": "Thu, 22 Oct 2026 10:00 UTC",
+			"SignOutLink": "https://auth.example.com/v1/auth/sessions/end?token=sample"}},
+	{TemplateAccountLocked, "Account locked", "Security notice when too many wrong passwords pause password sign-in. Sent once per lockout. Turn it off in Settings.",
+		map[string]string{"Attempts": "Number of failed attempts", "Duration": "How long sign-in is paused", "IP": "IP address of the last attempt", "When": "Date and time (UTC)"},
+		map[string]string{"Attempts": "10", "Duration": "15 minutes", "IP": "203.0.113.24", "When": "Thu, 22 Oct 2026 10:00 UTC"}},
 }
 
 // Lookup returns the Info of a template, or nil.
@@ -85,14 +96,26 @@ func Lookup(name string) *Info {
 }
 
 // #nosec G101 -- template names, not credentials
-var defaultSubjects = map[string]string{
-	TemplateVerifyEmail:     "{{.AppName}}: Verify your email address",
-	TemplateResetPassword:   "{{.AppName}}: Reset your password",
-	TemplatePasswordChanged: "{{.AppName}}: Your password was changed",
-	TemplateMFAChanged:      "{{.AppName}}: Your two-factor authentication settings changed",
+var defaultSubjects = map[string]map[string]string{
+	"en": {
+		TemplateVerifyEmail:     "{{.AppName}}: Verify your email address",
+		TemplateResetPassword:   "{{.AppName}}: Reset your password",
+		TemplatePasswordChanged: "{{.AppName}}: Your password was changed",
+		TemplateMFAChanged:      "{{.AppName}}: Your two-factor authentication settings changed",
+		TemplateNewDevice:       "{{.AppName}}: New sign-in from {{.Data.Device}}",
+		TemplateAccountLocked:   "{{.AppName}}: Sign-in paused after failed attempts",
+	},
+	"tr": {
+		TemplateVerifyEmail:     "{{.AppName}}: E-posta adresinizi doğrulayın",
+		TemplateResetPassword:   "{{.AppName}}: Şifrenizi sıfırlayın",
+		TemplatePasswordChanged: "{{.AppName}}: Şifreniz değiştirildi",
+		TemplateMFAChanged:      "{{.AppName}}: İki adımlı doğrulama ayarlarınız değişti",
+		TemplateNewDevice:       "{{.AppName}}: {{.Data.Device}} cihazından yeni giriş",
+		TemplateAccountLocked:   "{{.AppName}}: Başarısız denemeler nedeniyle giriş durduruldu",
+	},
 }
 
-//go:embed templates/*
+//go:embed templates/*/*.html templates/*/*.txt
 var templateFS embed.FS
 
 // Source is the editable form of a template. For the layout only HTML is used.
@@ -104,43 +127,66 @@ type Source struct {
 
 // Overrides supplies templates saved in the admin UI.
 type Overrides interface {
-	Override(name string) (Source, bool)
+	Override(name, locale string) (Source, bool)
 }
 
 // Renderer turns a template name + data into a Message.
 type Renderer struct {
 	appName   func() string
-	defaults  map[string]Source
+	locale    func() string // instance default language
+	defaults  map[string]map[string]Source
 	overrides Overrides
 }
 
-// NewRenderer creates a renderer; appName is read on every render so it can
-// change at runtime.
-func NewRenderer(appName func() string) (*Renderer, error) {
-	r := &Renderer{appName: appName, defaults: map[string]Source{}}
-	layout, err := templateFS.ReadFile("templates/_layout.html")
-	if err != nil {
-		return nil, err
+// NewRenderer creates a renderer; appName and defaultLocale are read on every
+// render so they can change at runtime.
+func NewRenderer(appName func() string, defaultLocale func() string) (*Renderer, error) {
+	if defaultLocale == nil {
+		defaultLocale = func() string { return i18n.Default }
 	}
-	r.defaults[LayoutName] = Source{HTML: string(layout)}
-	for _, t := range Templates {
-		h, err := templateFS.ReadFile("templates/" + t.Name + ".html")
+	r := &Renderer{appName: appName, locale: defaultLocale, defaults: map[string]map[string]Source{}}
+	for _, loc := range i18n.Locales {
+		dir := "templates/" + loc.Code + "/"
+		set := map[string]Source{}
+		layout, err := templateFS.ReadFile(dir + "_layout.html")
 		if err != nil {
 			return nil, err
 		}
-		txt, err := templateFS.ReadFile("templates/" + t.Name + ".txt")
-		if err != nil {
-			return nil, err
+		set[LayoutName] = Source{HTML: string(layout)}
+		for _, t := range Templates {
+			h, err := templateFS.ReadFile(dir + t.Name + ".html")
+			if err != nil {
+				return nil, err
+			}
+			txt, err := templateFS.ReadFile(dir + t.Name + ".txt")
+			if err != nil {
+				return nil, err
+			}
+			set[t.Name] = Source{Subject: defaultSubjects[loc.Code][t.Name], HTML: string(h), Text: string(txt)}
 		}
-		r.defaults[t.Name] = Source{Subject: defaultSubjects[t.Name], HTML: string(h), Text: string(txt)}
+		r.defaults[loc.Code] = set
 	}
 	// Built-in templates must always render; fail at startup if not.
-	for _, t := range Templates {
-		if _, err := r.Render("check@example.com", t.Name, t.Sample); err != nil {
-			return nil, fmt.Errorf("mailer: built-in template %s: %w", t.Name, err)
+	for _, loc := range i18n.Locales {
+		for _, t := range Templates {
+			if _, err := r.Render("check@example.com", t.Name, loc.Code, t.Sample); err != nil {
+				return nil, fmt.Errorf("mailer: built-in template %s (%s): %w", t.Name, loc.Code, err)
+			}
 		}
 	}
 	return r, nil
+}
+
+// Locale resolves the language to send in: the requested one when supported,
+// else the instance default.
+func (r *Renderer) Locale(requested string) string {
+	if l := i18n.Normalize(requested); l != "" {
+		return l
+	}
+	if l := i18n.Normalize(r.locale()); l != "" {
+		return l
+	}
+	return i18n.Default
 }
 
 // WithOverrides makes the renderer use templates saved in the admin UI.
@@ -149,30 +195,32 @@ func (r *Renderer) WithOverrides(o Overrides) *Renderer {
 	return r
 }
 
-// Default returns the built-in source of a template.
-func (r *Renderer) Default(name string) (Source, bool) {
-	s, ok := r.defaults[name]
+// Default returns the built-in source of a template in a language.
+func (r *Renderer) Default(name, locale string) (Source, bool) {
+	s, ok := r.defaults[r.Locale(locale)][name]
 	return s, ok
 }
 
-// Effective returns the source in use: the override if any, else the default.
-func (r *Renderer) Effective(name string) (Source, bool) {
+// Effective returns the source in use for a language: the override saved in
+// the admin UI if any, else the built-in one.
+func (r *Renderer) Effective(name, locale string) (Source, bool) {
+	locale = r.Locale(locale)
 	if r.overrides != nil {
-		if s, ok := r.overrides.Override(name); ok {
+		if s, ok := r.overrides.Override(name, locale); ok {
 			return s, true
 		}
 	}
-	return r.Default(name)
+	return r.Default(name, locale)
 }
 
-// Render builds a message with the effective templates. data is exposed to
-// templates as .Data.
-func (r *Renderer) Render(to, name string, data map[string]string) (Message, error) {
-	src, ok := r.Effective(name)
+// Render builds a message with the effective templates in the recipient's
+// language ("" = instance default). data is exposed to templates as .Data.
+func (r *Renderer) Render(to, name, locale string, data map[string]string) (Message, error) {
+	src, ok := r.Effective(name, locale)
 	if !ok || name == LayoutName {
 		return Message{}, fmt.Errorf("mailer: unknown template %q", name)
 	}
-	layout, _ := r.Effective(LayoutName)
+	layout, _ := r.Effective(LayoutName, locale)
 	return r.RenderSource(to, src, layout.HTML, data)
 }
 
@@ -283,4 +331,21 @@ func (l *Log) Send(_ context.Context, m Message) error {
 	l.log.Warn("SMTP not configured, email written to log (development only)",
 		"to", m.To, "subject", m.Subject, "body", strings.TrimSpace(m.Text))
 	return nil
+}
+
+// localSamples replace English sample values in previews of other languages.
+var localSamples = map[string]map[string]string{
+	"tr": {"ExpiresIn": "24 saat", "Duration": "15 dakika", "When": "22 Ekim 2026 10:00 UTC", "Method": "Şifre", "Action": "enabled"},
+}
+
+// SampleFor returns preview data for a template in a language.
+func SampleFor(info *Info, locale string) map[string]string {
+	out := map[string]string{}
+	for k, v := range info.Sample {
+		out[k] = v
+		if l, ok := localSamples[locale][k]; ok {
+			out[k] = l
+		}
+	}
+	return out
 }

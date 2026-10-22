@@ -45,11 +45,12 @@ func (s *Server) signUp(c fiber.Ctx) error {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 		Name     string `json:"name"`
+		Locale   string `json:"locale"`
 	}
 	if err := decode(c, &in); err != nil {
 		return err
 	}
-	res, err := s.auth.SignUp(c.Context(), auth.SignUpInput{Email: in.Email, Password: in.Password, Name: in.Name}, meta(c))
+	res, err := s.auth.SignUp(c.Context(), auth.SignUpInput{Email: in.Email, Password: in.Password, Name: in.Name, Locale: in.Locale}, meta(c))
 	if err != nil {
 		return err
 	}
@@ -287,10 +288,16 @@ func (s *Server) getMe(c fiber.Ctx) error {
 
 func (s *Server) updateMe(c fiber.Ctx) error {
 	var in struct {
-		Name *string `json:"name"`
+		Name   *string `json:"name"`
+		Locale *string `json:"locale"`
 	}
 	if err := decode(c, &in); err != nil {
 		return err
+	}
+	if in.Locale != nil {
+		if _, err := s.auth.SetLocale(c.Context(), userID(c), *in.Locale); err != nil {
+			return err
+		}
 	}
 	if in.Name == nil {
 		return s.getMe(c)

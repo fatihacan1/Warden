@@ -1,0 +1,10 @@
+Too many failed sign-in attempts
+
+Someone entered the wrong password for your {{.AppName}} account {{.Data.Attempts}} times. To protect it, password sign-in is paused for {{.Data.Duration}}.
+
+Last attempt from: {{.Data.IP}}
+Time:              {{.Data.When}}
+
+If it was you, wait and try again, or reset your password with "Forgot password".
+
+If it was not you, your password is still safe, but consider changing it and turning on two-factor authentication.

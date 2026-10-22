@@ -189,7 +189,7 @@ func (r *Relay) dispatch(ctx context.Context, m store.OutboxMessage, isEmail boo
 	if err := json.Unmarshal(plain, &job); err != nil {
 		return permanentError{fmt.Errorf("decode email: %w", err)}
 	}
-	msg, err := r.renderer.Render(job.To, job.Template, job.Data)
+	msg, err := r.renderer.Render(job.To, job.Template, job.Locale, job.Data)
 	if err != nil {
 		return permanentError{err}
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/fatihacan1/warden/internal/domain"
+	"github.com/fatihacan1/warden/internal/i18n"
 	"github.com/fatihacan1/warden/internal/oauth"
 	"github.com/fatihacan1/warden/internal/settings"
 	"github.com/fatihacan1/warden/internal/store"
@@ -129,16 +130,38 @@ func (s *Server) usersPage(c fiber.Ctx) error {
 		q = q[:200]
 	}
 	page, _ := strconv.Atoi(c.Query("page", "1"))
-	page = max(page, 1)
+	page = min(max(page, 1), 100000)
 	users, total, err := s.Store.ListUsers(c.Context(), q, pageSize, (page-1)*pageSize)
 	if err != nil {
 		return err
 	}
 	pages := max(1, (total+pageSize-1)/pageSize)
+	if page > pages {
+		// Out of range (bookmarked page, users deleted): go to the last page.
+		return c.Redirect().To("/admin/users?q=" + url.QueryEscape(q) + "&page=" + strconv.Itoa(pages))
+	}
+	first := (page-1)*pageSize + 1
+	if total == 0 {
+		first = 0
+	}
 	return s.render(c, fiber.StatusOK, "users", "users", "Users", map[string]any{
 		"Users": users, "Total": total, "Query": q, "Page": page, "Pages": pages,
-		"HasPrev": page > 1, "HasNext": page < pages,
+		"HasPrev": page > 1, "HasNext": page < pages, "Window": pageWindow(page, pages),
+		"From": first, "To": (page-1)*pageSize + len(users), "Default": s.Settings.Get().DefaultLocale,
 	})
+}
+
+// pageWindow lists the page numbers around the current one; 0 is a gap.
+func pageWindow(page, pages int) []int {
+	var out []int
+	for p := 1; p <= pages; p++ {
+		if p == 1 || p == pages || (p >= page-2 && p <= page+2) {
+			out = append(out, p)
+		} else if len(out) > 0 && out[len(out)-1] != 0 {
+			out = append(out, 0)
+		}
+	}
+	return out
 }
 
 func (s *Server) userPage(c fiber.Ctx) error {
@@ -159,7 +182,7 @@ func (s *Server) userPage(c fiber.Ctx) error {
 	codes, _ := s.Store.CountUnusedRecoveryCodes(c.Context(), id)
 	return s.render(c, fiber.StatusOK, "user", "users", u.Email, map[string]any{
 		"User": u, "Sessions": sessions, "Identities": identities, "Audit": audit, "RecoveryCodes": codes,
-		"AvatarURL": s.Auth.AvatarURL(c.Context(), u),
+		"AvatarURL": s.Auth.AvatarURL(c.Context(), u), "Locales": i18n.Locales, "Default": s.Settings.Get().DefaultLocale,
 	})
 }
 
@@ -191,6 +214,13 @@ func (s *Server) revokeUser(c fiber.Ctx) error {
 		_, err := s.Auth.RevokeAllSessions(c.Context(), id, uuid.Nil, domain.RevokeAdmin, domain.RequestMeta{IP: c.IP()})
 		return err
 	}, "admin.sessions_revoke", "revoked")
+}
+
+func (s *Server) localeUser(c fiber.Ctx) error {
+	return s.userAction(c, func(id uuid.UUID) error {
+		_, err := s.Auth.SetLocale(c.Context(), id, c.FormValue("locale"))
+		return err
+	}, "admin.locale_set", "locale")
 }
 
 func (s *Server) rolesUser(c fiber.Ctx) error {
@@ -246,7 +276,8 @@ func (s *Server) settingsPage(c fiber.Ctx) error {
 	over, since := s.Settings.Overridden()
 	return s.render(c, fiber.StatusOK, "settings", "settings", "Settings", map[string]any{
 		"S": s.Settings.Get(), "Overridden": over, "Since": since, "Env": s.Settings.Env(),
-		"Production": s.Config.IsProduction(),
+		"Production": s.Config.IsProduction(), "Locales": i18n.Locales, "MyIP": c.IP(),
+		"AllowlistForcedOff": s.Config.Admin.IPAllowlistDisabled,
 	})
 }
 
@@ -274,7 +305,14 @@ func (s *Server) saveSettings(c fiber.Ctx) error {
 		AllowedRedirectURIs:      lines(c.FormValue("allowed_redirect_uris")),
 		CORSOrigins:              lines(c.FormValue("cors_origins")),
 		RequirePublishableKey:    c.FormValue("require_publishable_key") == "on",
+		DefaultLocale:            c.FormValue("default_locale"),
+		NotifyNewDevice:          c.FormValue("notify_new_device") == "on",
+		NotifyAccountLocked:      c.FormValue("notify_account_locked") == "on",
+		AdminIPAllowlist:         c.FormValue("admin_ip_allowlist") == "on",
+		AdminAllowedIPs:          lines(c.FormValue("admin_allowed_ips")),
 	}
+	var addedIP bool
+	r.AdminAllowedIPs, addedIP = withCurrentIP(r.AdminIPAllowlist, r.AdminAllowedIPs, c.IP())
 	if r.RequirePublishableKey && !s.APIKeys.HasPublishable() {
 		return backErr(c, "/admin/settings", domain.ErrValidation.WithMessage("Create a publishable key on the API keys page before requiring one, or every app is locked out."))
 	}
@@ -284,7 +322,12 @@ func (s *Server) saveSettings(c fiber.Ctx) error {
 	s.audit(c, "admin.settings_saved", map[string]any{
 		"allow_signup": r.AllowSignup, "require_email_verification": r.RequireEmailVerification,
 		"check_breached_passwords": r.CheckBreachedPasswords, "require_publishable_key": r.RequirePublishableKey,
+		"admin_ip_allowlist": r.AdminIPAllowlist, "admin_allowed_ips": r.AdminAllowedIPs, "default_locale": r.DefaultLocale,
+		"notify_new_device": r.NotifyNewDevice, "notify_account_locked": r.NotifyAccountLocked,
 	})
+	if addedIP {
+		return back(c, "/admin/settings", "settingsip")
+	}
 	return back(c, "/admin/settings", "settings")
 }
 

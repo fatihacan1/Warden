@@ -10,7 +10,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/mail"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -183,6 +182,9 @@ func (s *Service) issueSession(ctx context.Context, tx *store.Store, u *domain.U
 	if err := tx.CreateSession(ctx, sess); err != nil {
 		return nil, err
 	}
+	if err := s.recordDevice(ctx, tx, u, sess.ID, amr, meta); err != nil {
+		return nil, err
+	}
 	if err := tx.TouchSignIn(ctx, u.ID); err != nil {
 		return nil, err
 	}
@@ -307,21 +309,4 @@ func (s *Service) takeJSON(ctx context.Context, key string, v any) error {
 		return err
 	}
 	return json.Unmarshal(b, v)
-}
-
-func humanDuration(d time.Duration) string {
-	switch {
-	case d >= time.Hour && d%time.Hour == 0:
-		h := int(d / time.Hour)
-		if h == 1 {
-			return "1 hour"
-		}
-		return strconv.Itoa(h) + " hours"
-	default:
-		m := int(d / time.Minute)
-		if m == 1 {
-			return "1 minute"
-		}
-		return strconv.Itoa(m) + " minutes"
-	}
 }

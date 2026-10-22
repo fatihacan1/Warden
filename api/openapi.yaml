@@ -72,6 +72,7 @@ paths:
                 email: { type: string, format: email, maxLength: 254 }
                 password: { type: string, minLength: 8, maxLength: 128 }
                 name: { type: string, maxLength: 100 }
+                locale: { type: string, enum: [en, tr], description: "Email language. Defaults to Accept-Language, then the instance default." }
       responses:
         "201": { $ref: "#/components/responses/Auth" }
         "403": { $ref: "#/components/responses/Error" }
@@ -240,6 +241,31 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
 
+  /v1/auth/sessions/end:
+    get:
+      tags: [Auth]
+      summary: Confirmation page for the link in a new device email
+      description: Shows a page with a button. GET never changes anything, because mail scanners open links.
+      operationId: endSessionPage
+      security: []
+      parameters:
+        - { name: token, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: HTML confirmation page }
+    post:
+      tags: [Auth]
+      summary: End the session reported in a new device email
+      operationId: endSession
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: { type: object, required: [token], properties: { token: { type: string } } }
+      responses:
+        "200": { description: HTML page, session ended }
+        "400": { description: Link used or expired }
+
   /v1/oauth/{provider}/authorize:
     get:
       tags: [OAuth]
@@ -351,6 +377,7 @@ paths:
               type: object
               properties:
                 name: { type: string, maxLength: 100 }
+                locale: { type: string, enum: ["", en, tr], description: "Email language; empty string = instance default" }
       responses:
         "200":
           description: Updated user
@@ -587,6 +614,7 @@ paths:
                 name: { type: string, maxLength: 100 }
                 roles: { type: array, items: { type: string, pattern: "^[a-z][a-z0-9_:.-]{0,63}$" }, maxItems: 32 }
                 email_verified: { type: boolean, default: false }
+                locale: { type: string, enum: [en, tr] }
       responses:
         "201":
           description: Created user
@@ -641,6 +669,7 @@ paths:
                 name: { type: string, maxLength: 100 }
                 roles: { type: array, items: { type: string } }
                 disabled: { type: boolean }
+                locale: { type: string, enum: ["", en, tr] }
       responses:
         "200":
           description: Updated user
@@ -874,6 +903,7 @@ components:
         name: { type: string }
         avatar_url: { type: string }
         roles: { type: array, items: { type: string } }
+        locale: { type: string, description: "Email language (en, tr); empty = instance default" }
         mfa_enabled: { type: boolean }
         has_password: { type: boolean }
         created_at: { type: string, format: date-time }

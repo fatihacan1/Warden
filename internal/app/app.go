@@ -148,7 +148,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 		publisher = a.Publisher
 	}
 
-	renderer, err := mailer.NewRenderer(func() string { return a.Settings.Get().AppName })
+	renderer, err := mailer.NewRenderer(func() string { return a.Settings.Get().AppName }, func() string { return a.Settings.Get().DefaultLocale })
 	if err != nil {
 		a.Close()
 		return nil, err
@@ -304,7 +304,11 @@ func (a *App) cleanupLoop(ctx context.Context) {
 			if err != nil {
 				return err
 			}
-			a.Log.Info("cleanup finished", "sessions", s, "outbox", o, "audit", au)
+			d, err := a.Store.DeleteStaleDevices(ctx, now.Add(-180*24*time.Hour))
+			if err != nil {
+				return err
+			}
+			a.Log.Info("cleanup finished", "sessions", s, "outbox", o, "audit", au, "devices", d)
 			return nil
 		})
 		if err != nil && ctx.Err() == nil {

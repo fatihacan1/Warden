@@ -85,6 +85,12 @@ type AdminConfig struct {
 	SessionTTL time.Duration `env:"SESSION_TTL" envDefault:"8h"`
 	// CookieSecure: "true", "false" or empty (= true only in production).
 	CookieSecure string `env:"COOKIE_SECURE"`
+	// AllowedIPs restricts the admin UI to these IPs or CIDR ranges. Editable
+	// in the admin UI. Prefer firewall or VPN rules; this is a second layer.
+	AllowedIPs []string `env:"ALLOWED_IPS" envSeparator:","`
+	// IPAllowlistDisabled is the emergency switch: it ignores the allowlist
+	// saved in the admin UI, for when you locked yourself out.
+	IPAllowlistDisabled bool `env:"IP_ALLOWLIST_DISABLED" envDefault:"false"`
 }
 
 type GRPCConfig struct {
@@ -181,6 +187,12 @@ type AuthConfig struct {
 	// RequirePublishableKey rejects public API calls that do not carry a
 	// publishable key (X-Warden-Key). Editable in the admin UI.
 	RequirePublishableKey bool `env:"REQUIRE_PUBLISHABLE_KEY" envDefault:"false"`
+	// DefaultLocale is the email language for users who have not chosen one.
+	DefaultLocale string `env:"DEFAULT_LOCALE" envDefault:"en"`
+	// NotifyNewDevice emails users the first time they sign in from a device.
+	NotifyNewDevice bool `env:"NOTIFY_NEW_DEVICE" envDefault:"true"`
+	// NotifyAccountLocked emails users when failed attempts lock password sign-in.
+	NotifyAccountLocked bool `env:"NOTIFY_ACCOUNT_LOCKED" envDefault:"true"`
 }
 
 type PasswordConfig struct {
@@ -530,6 +542,11 @@ func (c *Config) Validate() error {
 	for _, o := range c.HTTP.CORSOrigins {
 		if strings.EqualFold(o, "null") {
 			add("HTTP_CORS_ALLOWED_ORIGINS must not contain \"null\"")
+		}
+	}
+	for _, p := range c.Admin.AllowedIPs {
+		if _, _, err := net.ParseCIDR(p); err != nil && net.ParseIP(p) == nil {
+			add("ADMIN_ALLOWED_IPS contains %q, which is not an IP or CIDR", p)
 		}
 	}
 	if c.Webhook.Timeout < time.Second || c.Webhook.Timeout > time.Minute {

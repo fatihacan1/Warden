@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/fatihacan1/warden/internal/domain"
+	"github.com/fatihacan1/warden/internal/i18n"
 	"github.com/fatihacan1/warden/internal/observability"
 	"github.com/fatihacan1/warden/internal/ratelimit"
 )
@@ -222,5 +223,17 @@ func sessionID(c fiber.Ctx) uuid.UUID {
 }
 
 func meta(c fiber.Ctx) domain.RequestMeta {
-	return domain.RequestMeta{IP: c.IP(), UserAgent: c.Get(fiber.HeaderUserAgent), RequestID: requestid.FromContext(c)}
+	m := domain.RequestMeta{IP: c.IP(), UserAgent: c.Get(fiber.HeaderUserAgent), RequestID: requestid.FromContext(c),
+		Locale: i18n.FromAcceptLanguage(c.Get(fiber.HeaderAcceptLanguage))}
+	// Country headers are only trusted from a configured proxy; anyone else
+	// could send them.
+	if c.IsProxyTrusted() {
+		for _, h := range []string{"CF-IPCountry", "X-Vercel-IP-Country", "CloudFront-Viewer-Country", "X-Country-Code"} {
+			if v := strings.ToUpper(strings.TrimSpace(c.Get(h))); len(v) == 2 && v != "XX" && v != "T1" {
+				m.Country = v
+				break
+			}
+		}
+	}
+	return m
 }

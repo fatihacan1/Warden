@@ -19,6 +19,7 @@ type UserView struct {
 	Name          string     `json:"name"`
 	AvatarURL     string     `json:"avatar_url,omitempty"`
 	Roles         []string   `json:"roles"`
+	Locale        string     `json:"locale"`
 	MFAEnabled    bool       `json:"mfa_enabled"`
 	HasPassword   bool       `json:"has_password"`
 	CreatedAt     time.Time  `json:"created_at"`
@@ -28,7 +29,7 @@ type UserView struct {
 func (s *Server) userView(ctx context.Context, u *domain.User) UserView {
 	return UserView{
 		ID: u.ID.String(), Email: u.Email, EmailVerified: u.EmailVerified(), Name: u.Name,
-		AvatarURL: s.auth.AvatarURL(ctx, u), Roles: u.Roles, MFAEnabled: u.MFAEnabled(),
+		AvatarURL: s.auth.AvatarURL(ctx, u), Roles: u.Roles, Locale: u.Locale, MFAEnabled: u.MFAEnabled(),
 		HasPassword: u.HasPassword(), CreatedAt: u.CreatedAt, LastSignInAt: u.LastSignInAt,
 	}
 }

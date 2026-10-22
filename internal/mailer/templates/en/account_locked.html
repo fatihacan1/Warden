@@ -1,0 +1,10 @@
+{{template "layout_start" .}}
+<h1 style="font-size:20px;margin:0 0 12px">Too many failed sign-in attempts</h1>
+<p style="margin:0 0 8px">Someone entered the wrong password for your {{.AppName}} account {{.Data.Attempts}} times. To protect it, password sign-in is paused for {{.Data.Duration}}.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0;font-size:14px;border-collapse:collapse">
+<tr><td style="padding:4px 16px 4px 0;color:#77776f">Last attempt from</td><td style="padding:4px 0">{{.Data.IP}}</td></tr>
+<tr><td style="padding:4px 16px 4px 0;color:#77776f">Time</td><td style="padding:4px 0">{{.Data.When}}</td></tr>
+</table>
+<p style="margin:0 0 8px">If it was you, wait and try again, or reset your password with "Forgot password".</p>
+<p style="margin:0;color:#55554f;font-size:13px">If it was not you, your password is still safe, but consider changing it and turning on two-factor authentication.</p>
+{{template "layout_end" .}}

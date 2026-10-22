@@ -1,0 +1,10 @@
+{{template "layout_start" .}}
+<h1 style="font-size:20px;margin:0 0 12px">Çok fazla başarısız giriş denemesi</h1>
+<p style="margin:0 0 8px">{{.AppName}} hesabınız için {{.Data.Attempts}} kez yanlış şifre girildi. Hesabınızı korumak için şifreyle giriş {{.Data.Duration}} süreyle durduruldu.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0;font-size:14px;border-collapse:collapse">
+<tr><td style="padding:4px 16px 4px 0;color:#77776f">Son deneme</td><td style="padding:4px 0">{{.Data.IP}}</td></tr>
+<tr><td style="padding:4px 16px 4px 0;color:#77776f">Zaman</td><td style="padding:4px 0">{{.Data.When}}</td></tr>
+</table>
+<p style="margin:0 0 8px">Deneyen sizseniz biraz bekleyip tekrar deneyin ya da "Şifremi unuttum" ile şifrenizi sıfırlayın.</p>
+<p style="margin:0;color:#55554f;font-size:13px">Siz değilseniz şifreniz hâlâ güvende; yine de değiştirmeyi ve iki adımlı doğrulamayı açmayı düşünün.</p>
+{{template "layout_end" .}}

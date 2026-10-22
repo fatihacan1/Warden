@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/fatihacan1/warden/internal/domain"
+	"github.com/fatihacan1/warden/internal/i18n"
 	"github.com/fatihacan1/warden/internal/store"
 )
 
@@ -15,7 +16,7 @@ import (
 type LibraryStore interface {
 	ListEmailTemplates(ctx context.Context) ([]store.EmailTemplateRow, error)
 	SaveEmailTemplate(ctx context.Context, r store.EmailTemplateRow) error
-	DeleteEmailTemplate(ctx context.Context, name string) error
+	DeleteEmailTemplate(ctx context.Context, name, locale string) error
 }
 
 type override struct {
@@ -41,14 +42,18 @@ func NewLibrary(st LibraryStore, renderer *Renderer, log *slog.Logger) *Library 
 	return l
 }
 
+func key(name, locale string) string { return name + "/" + locale }
+
 // Override implements Overrides.
-func (l *Library) Override(name string) (Source, bool) {
-	o, ok := (*l.cur.Load())[name]
+func (l *Library) Override(name, locale string) (Source, bool) {
+	o, ok := (*l.cur.Load())[key(name, locale)]
 	return o.src, ok
 }
 
 // UpdatedAt reports when a template was last saved (zero if built-in).
-func (l *Library) UpdatedAt(name string) time.Time { return (*l.cur.Load())[name].updatedAt }
+func (l *Library) UpdatedAt(name, locale string) time.Time {
+	return (*l.cur.Load())[key(name, locale)].updatedAt
+}
 
 // Reload reads every override from the database.
 func (l *Library) Reload(ctx context.Context) error {
@@ -58,7 +63,7 @@ func (l *Library) Reload(ctx context.Context) error {
 	}
 	m := map[string]override{}
 	for _, r := range rows {
-		m[r.Name] = override{src: Source{Subject: r.Subject, HTML: r.HTML, Text: r.Text}, updatedAt: r.UpdatedAt}
+		m[key(r.Name, r.Locale)] = override{src: Source{Subject: r.Subject, HTML: r.HTML, Text: r.Text}, updatedAt: r.UpdatedAt}
 	}
 	l.cur.Store(&m)
 	return nil
@@ -82,21 +87,24 @@ func (l *Library) Run(ctx context.Context, every time.Duration) {
 
 // Preview renders src for name with sample data. For the layout, the first
 // template is rendered inside it.
-func (l *Library) Preview(name string, src Source) (Message, error) {
+func (l *Library) Preview(name, locale string, src Source) (Message, error) {
 	if name == LayoutName {
-		body, _ := l.renderer.Effective(Templates[0].Name)
-		return l.renderer.RenderSource("preview@example.com", body, src.HTML, Templates[0].Sample)
+		body, _ := l.renderer.Effective(Templates[0].Name, locale)
+		return l.renderer.RenderSource("preview@example.com", body, src.HTML, SampleFor(&Templates[0], l.renderer.Locale(locale)))
 	}
 	info := Lookup(name)
 	if info == nil {
 		return Message{}, domain.ErrNotFound
 	}
-	layout, _ := l.renderer.Effective(LayoutName)
-	return l.renderer.RenderSource("preview@example.com", src, layout.HTML, info.Sample)
+	layout, _ := l.renderer.Effective(LayoutName, locale)
+	return l.renderer.RenderSource("preview@example.com", src, layout.HTML, SampleFor(info, l.renderer.Locale(locale)))
 }
 
-// Save validates and stores a template override.
-func (l *Library) Save(ctx context.Context, name string, src Source) error {
+// Save validates and stores a template override for one language.
+func (l *Library) Save(ctx context.Context, name, locale string, src Source) error {
+	if !i18n.Supported(locale) {
+		return domain.ErrValidation.WithMessage("Unsupported language.")
+	}
 	src.Subject = strings.TrimSpace(src.Subject)
 	if len(src.Subject) > 300 || len(src.HTML) > 100<<10 || len(src.Text) > 50<<10 {
 		return domain.ErrValidation.WithMessage("Template too large (subject 300 bytes, HTML 100 KiB, text 50 KiB).")
@@ -107,7 +115,7 @@ func (l *Library) Save(ctx context.Context, name string, src Source) error {
 		}
 		// Every template must still render inside the new layout.
 		for _, t := range Templates {
-			body, _ := l.renderer.Effective(t.Name)
+			body, _ := l.renderer.Effective(t.Name, locale)
 			if _, err := l.renderer.RenderSource("check@example.com", body, src.HTML, t.Sample); err != nil {
 				return domain.ErrValidation.WithMessage(t.Title + " no longer renders: " + err.Error())
 			}
@@ -116,22 +124,22 @@ func (l *Library) Save(ctx context.Context, name string, src Source) error {
 		if strings.TrimSpace(src.Text) == "" || strings.TrimSpace(src.HTML) == "" {
 			return domain.ErrValidation.WithMessage("Both the HTML and the plain text version are required.")
 		}
-		if _, err := l.Preview(name, src); err != nil {
+		if _, err := l.Preview(name, locale, src); err != nil {
 			if de := domain.AsError(err); de != nil {
 				return err
 			}
 			return domain.ErrValidation.WithMessage(err.Error())
 		}
 	}
-	if err := l.store.SaveEmailTemplate(ctx, store.EmailTemplateRow{Name: name, Subject: src.Subject, HTML: src.HTML, Text: src.Text}); err != nil {
+	if err := l.store.SaveEmailTemplate(ctx, store.EmailTemplateRow{Name: name, Locale: locale, Subject: src.Subject, HTML: src.HTML, Text: src.Text}); err != nil {
 		return err
 	}
 	return l.Reload(ctx)
 }
 
 // Reset removes an override; the built-in template applies again.
-func (l *Library) Reset(ctx context.Context, name string) error {
-	if err := l.store.DeleteEmailTemplate(ctx, name); err != nil {
+func (l *Library) Reset(ctx context.Context, name, locale string) error {
+	if err := l.store.DeleteEmailTemplate(ctx, name, locale); err != nil {
 		return err
 	}
 	return l.Reload(ctx)

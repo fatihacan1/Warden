@@ -56,6 +56,7 @@ type Envelope struct {
 // EmailJob is an encrypted outbox payload for the mailer.
 type EmailJob struct {
 	To       string            `json:"to"`
+	Locale   string            `json:"locale,omitempty"`
 	Template string            `json:"template"`
 	Data     map[string]string `json:"data"`
 }
@@ -120,11 +121,11 @@ func NewEnvelope(typ string, userID uuid.UUID, data any) ([]byte, error) {
 
 // Email enqueues a transactional email. The payload contains one-time links,
 // so it is encrypted at rest and deleted after delivery.
-func (w *Writer) Email(ctx context.Context, tx *store.Store, to, template string, data map[string]string) error {
+func (w *Writer) Email(ctx context.Context, tx *store.Store, to, locale, template string, data map[string]string) error {
 	if strings.TrimSpace(to) == "" {
 		return nil
 	}
-	body, err := json.Marshal(EmailJob{To: to, Template: template, Data: data})
+	body, err := json.Marshal(EmailJob{To: to, Locale: locale, Template: template, Data: data})
 	if err != nil {
 		return err
 	}

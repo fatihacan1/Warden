@@ -1,4 +1,4 @@
-{{define "content"}}{{$csrf := .CSRF}}{{with .Data}}{{$i := .Info}}
+{{define "content"}}{{$csrf := .CSRF}}{{with .Data}}{{$i := .Info}}{{$lang := .Lang.Code}}
 <p class="crumb"><a href="/admin/emails">Emails</a></p>
 <div class="head">
   <div>
@@ -8,32 +8,38 @@
   {{if .Custom}}<span class="tag tag-accent">Customized</span>{{else}}<span class="tag">Built-in</span>{{end}}
 </div>
 
+<nav class="lang-tabs" aria-label="Language">
+  {{range .Langs}}
+  <a href="/admin/emails/{{$i.Name}}?lang={{.Code}}" {{if eq .Code $lang}}aria-current="page"{{end}}>{{flag .Code}} {{.Name}}{{if .Customized}} <span class="dot dot-ok" title="Customized"></span>{{end}}</a>
+  {{end}}
+</nav>
+
 <div class="editor">
   <form method="post" action="/admin/emails/{{$i.Name}}" class="panel" id="email-form">
     <input type="hidden" name="_csrf" value="{{$csrf}}">
-    <header><h2>Template</h2></header>
+    <input type="hidden" name="lang" value="{{$lang}}">
+    <header><h2>Template</h2><span class="muted small">{{flag .Lang.Code}} {{.Lang.Name}}</span></header>
     <div class="panel-body">
       {{if not .Layout}}
       <div class="field">
         <label for="subject">Subject</label>
-        <input id="subject" name="subject" type="text" spellcheck="false" value="{{.Src.Subject}}">
+        <input id="subject" name="subject" type="text" class="mono-input" spellcheck="false" value="{{.Src.Subject}}">
       </div>
       {{end}}
       <div class="field">
-        <label for="html">HTML</label>
-        <textarea id="html" name="html" class="code-area" spellcheck="false" rows="16">{{.Src.HTML}}</textarea>
-        {{if .Layout}}<p class="help">Must define <code>layout_start</code> and <code>layout_end</code>. Every template is checked against the new layout before saving.</p>{{else}}<p class="help">Wrap the content in <code>{{"{{"}}template "layout_start" .{{"}}"}}</code> and <code>{{"{{"}}template "layout_end" .{{"}}"}}</code> to use the shared layout.</p>{{end}}
+        <div class="editor-label"><label for="html">HTML</label><span class="muted small">Go template</span></div>
+        <textarea id="html" name="html" class="code-area" data-code="html" spellcheck="false" wrap="off" rows="18">{{.Src.HTML}}</textarea>
+        {{if .Layout}}<p class="help">Must define <code>layout_start</code> and <code>layout_end</code>. Every template in this language is checked against the new layout before saving.</p>{{else}}<p class="help">Wrap the content in <code>{{"{{"}}template "layout_start" .{{"}}"}}</code> and <code>{{"{{"}}template "layout_end" .{{"}}"}}</code> to use the shared layout.</p>{{end}}
       </div>
       {{if not .Layout}}
       <div class="field">
-        <label for="text">Plain text</label>
-        <textarea id="text" name="text" class="code-area" spellcheck="false" rows="8">{{.Src.Text}}</textarea>
-        <p class="help">Shown by clients that do not render HTML, and used by spam filters. Keep it in sync.</p>
+        <div class="editor-label"><label for="text">Plain text</label><span class="muted small">Shown by clients without HTML, read by spam filters</span></div>
+        <textarea id="text" name="text" class="code-area" data-code="text" spellcheck="false" wrap="off" rows="10">{{.Src.Text}}</textarea>
       </div>
       {{end}}
       <div class="row">
-        <button class="btn btn-primary" type="submit">Save template</button>
-        <button class="btn" type="submit" formaction="/admin/emails/{{$i.Name}}/preview" formtarget="preview">Preview changes</button>
+        <button class="btn btn-primary" type="submit">Save {{.Lang.Name}} template</button>
+        <button class="btn" type="submit" formaction="/admin/emails/{{$i.Name}}/preview?lang={{$lang}}" formtarget="preview">Preview changes</button>
       </div>
     </div>
   </form>
@@ -41,17 +47,17 @@
   <div class="stack">
     <section class="panel">
       <header><h2>Preview</h2><span class="muted small">Sample data</span></header>
-      <iframe name="preview" class="preview-frame" title="Email preview" sandbox src="/admin/emails/{{$i.Name}}/preview"></iframe>
-      {{if not .Layout}}<p class="panel-body small mb-0"><a href="/admin/emails/{{$i.Name}}/preview?view=text" target="preview">Plain text version</a> · <a href="/admin/emails/{{$i.Name}}/preview" target="preview">HTML version</a></p>{{end}}
+      <iframe name="preview" class="preview-frame" title="Email preview" sandbox src="/admin/emails/{{$i.Name}}/preview?lang={{$lang}}"></iframe>
+      {{if not .Layout}}<p class="panel-body small mb-0"><a href="/admin/emails/{{$i.Name}}/preview?lang={{$lang}}&view=text" target="preview">Plain text version</a> · <a href="/admin/emails/{{$i.Name}}/preview?lang={{$lang}}" target="preview">HTML version</a></p>{{end}}
     </section>
 
     <section class="panel">
-      <header><h2>Variables</h2></header>
+      <header><h2>Variables</h2><span class="muted small">Click to insert</span></header>
       <div class="panel-body">
-        <dl class="kv">
-          <dt><code>{{"{{"}}.AppName{{"}}"}}</code></dt><dd>App name from Settings</dd>
-          <dt><code>{{"{{"}}.Year{{"}}"}}</code></dt><dd>Current year</dd>
-          {{range $k, $v := $i.Vars}}<dt><code>{{"{{"}}.Data.{{$k}}{{"}}"}}</code></dt><dd>{{$v}}</dd>{{end}}
+        <dl class="kv vars">
+          <dt><button type="button" class="var-chip" data-insert="{{"{{"}}.AppName{{"}}"}}">.AppName</button></dt><dd>App name from Settings</dd>
+          <dt><button type="button" class="var-chip" data-insert="{{"{{"}}.Year{{"}}"}}">.Year</button></dt><dd>Current year</dd>
+          {{range $k, $v := $i.Vars}}<dt><button type="button" class="var-chip" data-insert="{{"{{"}}.Data.{{$k}}{{"}}"}}">.Data.{{$k}}</button></dt><dd>{{$v}}</dd>{{end}}
         </dl>
       </div>
     </section>
@@ -61,10 +67,11 @@
       <header><h2>Send a test</h2></header>
       <form method="post" action="/admin/emails/{{$i.Name}}/test" class="panel-body">
         <input type="hidden" name="_csrf" value="{{$csrf}}">
+        <input type="hidden" name="lang" value="{{$lang}}">
         <div class="field">
           <label for="to">To</label>
           <input id="to" name="to" type="text" inputmode="email" autocomplete="email" placeholder="you@example.com">
-          <p class="help">Sends the saved version with sample data{{if not .SMTP}} (SMTP is off, so it goes to the log){{end}}.</p>
+          <p class="help">Sends the saved {{.Lang.Name}} version with sample data{{if not .SMTP}} (SMTP is off, so it goes to the log){{end}}.</p>
         </div>
         <button class="btn" type="submit">Send test email</button>
       </form>
@@ -72,9 +79,10 @@
     {{end}}
 
     {{if .Custom}}
-    <form method="post" action="/admin/emails/{{$i.Name}}/reset" data-confirm="Discard your changes and use the built-in template again?">
+    <form method="post" action="/admin/emails/{{$i.Name}}/reset" data-confirm="Discard your {{.Lang.Name}} changes and use the built-in template again?">
       <input type="hidden" name="_csrf" value="{{$csrf}}">
-      <button class="btn btn-small" type="submit">Reset to built-in</button>
+      <input type="hidden" name="lang" value="{{$lang}}">
+      <button class="btn btn-small" type="submit">Reset {{.Lang.Name}} to built-in</button>
     </form>
     {{end}}
   </div>

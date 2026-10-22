@@ -19,6 +19,7 @@ import (
 	"github.com/fatihacan1/warden/internal/crypto/randtoken"
 	"github.com/fatihacan1/warden/internal/domain"
 	"github.com/fatihacan1/warden/internal/events"
+	"github.com/fatihacan1/warden/internal/i18n"
 	"github.com/fatihacan1/warden/internal/mailer"
 	"github.com/fatihacan1/warden/internal/webhooks"
 )
@@ -291,40 +292,70 @@ func (s *Server) retryDelivery(c fiber.Ctx) error {
 
 type emailRow struct {
 	mailer.Info
+	Langs []emailLang
+}
+
+type emailLang struct {
+	i18n.Locale
 	Customized bool
 	UpdatedAt  time.Time
 }
 
-func (s *Server) emailsPage(c fiber.Ctx) error {
-	var rows []emailRow
-	for _, t := range mailer.Templates {
-		_, custom := s.Mail.Override(t.Name)
-		rows = append(rows, emailRow{Info: t, Customized: custom, UpdatedAt: s.Mail.UpdatedAt(t.Name)})
+func (s *Server) emailLangs(name string) []emailLang {
+	var out []emailLang
+	for _, l := range i18n.Locales {
+		_, custom := s.Mail.Override(name, l.Code)
+		out = append(out, emailLang{Locale: l, Customized: custom, UpdatedAt: s.Mail.UpdatedAt(name, l.Code)})
 	}
-	_, layoutCustom := s.Mail.Override(mailer.LayoutName)
+	return out
+}
+
+func (s *Server) emailsPage(c fiber.Ctx) error {
+	rows := []emailRow{{Info: *layoutInfo(), Langs: s.emailLangs(mailer.LayoutName)}}
+	for _, t := range mailer.Templates {
+		rows = append(rows, emailRow{Info: t, Langs: s.emailLangs(t.Name)})
+	}
 	return s.render(c, fiber.StatusOK, "emails", "emails", "Emails", map[string]any{
-		"Templates": rows, "LayoutCustom": layoutCustom, "SMTP": s.Config.SMTP.Host != "", "From": s.Config.SMTP.From,
+		"Templates": rows, "SMTP": s.Config.SMTP.Host != "", "From": s.Config.SMTP.From,
+		"Default": i18n.Lookup(s.Renderer.Locale("")), "Locales": i18n.Locales,
 	})
+}
+
+func layoutInfo() *mailer.Info {
+	return &mailer.Info{Name: mailer.LayoutName, Title: "Layout", Description: "The frame around every HTML email: header, footer and colors.",
+		Vars: map[string]string{}}
 }
 
 func emailInfo(name string) (*mailer.Info, bool) {
 	if name == mailer.LayoutName {
-		return &mailer.Info{Name: mailer.LayoutName, Title: "Layout", Description: "The frame around every HTML email: header, footer and colors.",
-			Vars: map[string]string{}}, true
+		return layoutInfo(), true
 	}
 	i := mailer.Lookup(name)
 	return i, i != nil
 }
+
+// emailLocale reads ?lang= (or the form field) and falls back to the default.
+func (s *Server) emailLocale(c fiber.Ctx) string {
+	l := c.Query("lang")
+	if c.Method() == fiber.MethodPost && c.FormValue("lang") != "" {
+		l = c.FormValue("lang")
+	}
+	return s.Renderer.Locale(l)
+}
+
+func emailPath(name, locale string) string { return "/admin/emails/" + name + "?lang=" + locale }
 
 func (s *Server) emailPage(c fiber.Ctx) error {
 	info, ok := emailInfo(c.Params("name"))
 	if !ok {
 		return fiber.ErrNotFound
 	}
-	src, _ := s.Renderer.Effective(info.Name)
-	_, custom := s.Mail.Override(info.Name)
+	loc := s.emailLocale(c)
+	src, _ := s.Renderer.Effective(info.Name, loc)
+	_, custom := s.Mail.Override(info.Name, loc)
 	return s.render(c, fiber.StatusOK, "email", "emails", info.Title, map[string]any{
 		"Info": info, "Src": src, "Custom": custom, "Layout": info.Name == mailer.LayoutName, "SMTP": s.Config.SMTP.Host != "",
+		"Lang": i18n.Lookup(loc), "Langs": s.emailLangs(info.Name),
 	})
 }
 
@@ -337,11 +368,12 @@ func (s *Server) saveEmail(c fiber.Ctx) error {
 	if !ok {
 		return fiber.ErrNotFound
 	}
-	path := "/admin/emails/" + info.Name
-	if err := s.Mail.Save(c.Context(), info.Name, emailSource(c)); err != nil {
+	loc := s.emailLocale(c)
+	path := emailPath(info.Name, loc)
+	if err := s.Mail.Save(c.Context(), info.Name, loc, emailSource(c)); err != nil {
 		return backErr(c, path, err)
 	}
-	s.audit(c, "admin.email_template_saved", map[string]any{"template": info.Name})
+	s.audit(c, "admin.email_template_saved", map[string]any{"template": info.Name, "locale": loc})
 	return back(c, path, "emailsaved")
 }
 
@@ -350,11 +382,12 @@ func (s *Server) resetEmail(c fiber.Ctx) error {
 	if !ok {
 		return fiber.ErrNotFound
 	}
-	if err := s.Mail.Reset(c.Context(), info.Name); err != nil {
-		return backErr(c, "/admin/emails/"+info.Name, err)
+	loc := s.emailLocale(c)
+	if err := s.Mail.Reset(c.Context(), info.Name, loc); err != nil {
+		return backErr(c, emailPath(info.Name, loc), err)
 	}
-	s.audit(c, "admin.email_template_reset", map[string]any{"template": info.Name})
-	return back(c, "/admin/emails/"+info.Name, "emailreset")
+	s.audit(c, "admin.email_template_reset", map[string]any{"template": info.Name, "locale": loc})
+	return back(c, emailPath(info.Name, loc), "emailreset")
 }
 
 // previewEmail renders into the preview frame: the saved version on GET, the
@@ -364,7 +397,8 @@ func (s *Server) previewEmail(c fiber.Ctx) error {
 	if !ok {
 		return fiber.ErrNotFound
 	}
-	src, _ := s.Renderer.Effective(info.Name)
+	loc := s.emailLocale(c)
+	src, _ := s.Renderer.Effective(info.Name, loc)
 	if c.Method() == fiber.MethodPost {
 		src = emailSource(c)
 	}
@@ -372,7 +406,7 @@ func (s *Server) previewEmail(c fiber.Ctx) error {
 	if c.Query("view") == "text" {
 		view = "text"
 	}
-	msg, err := s.Mail.Preview(info.Name, src)
+	msg, err := s.Mail.Preview(info.Name, loc, src)
 	// The frame is sandboxed (no scripts, no forms, no same-origin access).
 	c.Set("X-Frame-Options", "SAMEORIGIN")
 	c.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; frame-ancestors 'self'; sandbox")
@@ -395,13 +429,14 @@ func (s *Server) testEmail(c fiber.Ctx) error {
 	if !ok {
 		return fiber.ErrNotFound
 	}
-	path := "/admin/emails/" + info.Name
+	loc := s.emailLocale(c)
+	path := emailPath(info.Name, loc)
 	addr, err := mail.ParseAddress(strings.TrimSpace(c.FormValue("to")))
 	if err != nil {
 		return backErr(c, path, domain.ErrValidation.WithMessage("Enter the email address to send the test to."))
 	}
-	src, _ := s.Renderer.Effective(info.Name)
-	msg, err := s.Mail.Preview(info.Name, src)
+	src, _ := s.Renderer.Effective(info.Name, loc)
+	msg, err := s.Mail.Preview(info.Name, loc, src)
 	if err != nil {
 		return backErr(c, path, err)
 	}

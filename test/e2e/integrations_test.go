@@ -5,6 +5,7 @@ package e2e
 import (
 	"context"
 	"encoding/json"
+	"html"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -20,7 +21,7 @@ import (
 	"github.com/fatihacan1/warden/internal/webhooks"
 )
 
-var revealRe = regexp.MustCompile(`<code>((?:sk|pk)_test_[A-Za-z0-9_-]{20,}|whsec_[A-Za-z0-9+/=]{20,})</code>`)
+var revealRe = regexp.MustCompile(`<code>((?:sk|pk)_test_[A-Za-z0-9_-]{20,}|whsec_(?:[A-Za-z0-9+/=]|&#43;){20,})</code>`)
 
 // adminReveal follows a show-once redirect and returns the revealed value.
 func (a *adminClient) reveal(res *http.Response) string {
@@ -32,13 +33,14 @@ func (a *adminClient) reveal(res *http.Response) string {
 	_, page := adminDo(a.t, "GET", loc, a.cookie, nil, nil)
 	m := revealRe.FindStringSubmatch(page)
 	if m == nil {
-		a.t.Fatal("no revealed value on page")
+		a.t.Fatalf("no revealed value on page (%s): %.400s", loc, page)
 	}
 	// Show-once: a second visit shows nothing.
 	if _, again := adminDo(a.t, "GET", loc, a.cookie, nil, nil); revealRe.MatchString(again) {
 		a.t.Fatal("secret shown twice")
 	}
-	return m[1]
+	// html/template writes "+" as "&#43;"; browsers show it as "+".
+	return html.UnescapeString(m[1])
 }
 
 func (a *adminClient) createKey(kind, name, origins string) string {
@@ -365,7 +367,7 @@ func TestWebhooks(t *testing.T) {
 
 func TestEmailTemplates(t *testing.T) {
 	a := adminLogin(t)
-	src, _ := A.Renderer.Default("verify_email")
+	src, _ := A.Renderer.Default("verify_email", "en")
 	form := url.Values{"_csrf": {a.csrf}, "subject": {"Welcome aboard, confirm {{.AppName}}"},
 		"html": {strings.Replace(src.HTML, "Confirm your email address", "Custom verify heading", 1)}, "text": {src.Text + "\nCustom footer"}}
 	res, _ := adminDo(t, "POST", "/admin/emails/verify_email", a.cookie, form, nil)
@@ -399,7 +401,7 @@ func TestEmailTemplates(t *testing.T) {
 	if res, _ := adminDo(t, "POST", "/admin/emails/verify_email", a.cookie, bad, nil); !hasFlashError(res) {
 		t.Fatal("broken template accepted")
 	}
-	if s, _ := A.Renderer.Effective("verify_email"); !strings.Contains(s.HTML, "Custom verify heading") {
+	if s, _ := A.Renderer.Effective("verify_email", "en"); !strings.Contains(s.HTML, "Custom verify heading") {
 		t.Fatal("a rejected save replaced the template")
 	}
 }

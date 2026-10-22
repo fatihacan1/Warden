@@ -16,6 +16,7 @@ import (
 	"github.com/fatihacan1/warden/internal/crypto/randtoken"
 	"github.com/fatihacan1/warden/internal/domain"
 	"github.com/fatihacan1/warden/internal/events"
+	"github.com/fatihacan1/warden/internal/i18n"
 	"github.com/fatihacan1/warden/internal/mailer"
 	"github.com/fatihacan1/warden/internal/store"
 )
@@ -46,9 +47,9 @@ func (s *Service) queueVerificationEmail(ctx context.Context, tx *store.Store, u
 		s.cfg.Auth.EmailVerificationTTL); err != nil {
 		return err
 	}
-	return s.Events.Email(ctx, tx, u.Email, mailer.TemplateVerifyEmail, map[string]string{
+	return s.Events.Email(ctx, tx, u.Email, s.locale(u), mailer.TemplateVerifyEmail, map[string]string{
 		"Link":      link(s.Settings.Get().VerifyEmailURL, tok),
-		"ExpiresIn": humanDuration(s.cfg.Auth.EmailVerificationTTL),
+		"ExpiresIn": i18n.Duration(s.cfg.Auth.EmailVerificationTTL, s.locale(u)),
 	})
 }
 
@@ -126,9 +127,9 @@ func (s *Service) ForgotPassword(ctx context.Context, rawEmail string, meta doma
 		return err
 	}
 	err = s.Store.InTx(ctx, func(tx *store.Store) error {
-		return s.Events.Email(ctx, tx, u.Email, mailer.TemplateResetPassword, map[string]string{
+		return s.Events.Email(ctx, tx, u.Email, s.locale(u), mailer.TemplateResetPassword, map[string]string{
 			"Link":      link(s.Settings.Get().ResetPasswordURL, tok),
-			"ExpiresIn": humanDuration(s.cfg.Auth.PasswordResetTTL),
+			"ExpiresIn": i18n.Duration(s.cfg.Auth.PasswordResetTTL, s.locale(u)),
 		})
 	})
 	if err == nil {
@@ -192,7 +193,7 @@ func (s *Service) ResetPassword(ctx context.Context, tok, newPassword string, me
 		if err := s.Events.Event(ctx, tx, events.UserPasswordChange, uid, map[string]any{"via": "reset"}); err != nil {
 			return err
 		}
-		return s.Events.Email(ctx, tx, u.Email, mailer.TemplatePasswordChanged, map[string]string{"When": time.Now().UTC().Format(time.RFC1123)})
+		return s.Events.Email(ctx, tx, u.Email, s.locale(u), mailer.TemplatePasswordChanged, map[string]string{"When": i18n.Time(time.Now(), s.locale(u))})
 	})
 	if errors.Is(err, domain.ErrNotFound) {
 		return domain.ErrInvalidToken

@@ -1,0 +1,16 @@
+New sign-in to your account
+
+Your {{.AppName}} account was just signed in to from a device we have not seen before.
+
+Device:     {{.Data.Device}}
+IP address: {{.Data.IP}}
+{{if .Data.Location}}Location:   {{.Data.Location}}
+{{end}}Method:     {{.Data.Method}}
+Time:       {{.Data.When}}
+
+If this was you, you can ignore this email.
+{{if .Data.SignOutLink}}
+This wasn't me, sign out that device:
+{{.Data.SignOutLink}}
+{{end}}
+If you do not recognize this sign-in, sign that device out and change your password right away.

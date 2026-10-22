@@ -1,0 +1,5 @@
+İki adımlı doğrulama {{if eq .Data.Action "enabled"}}açıldı{{else}}kapatıldı{{end}}
+
+{{.AppName}} hesabınızda iki adımlı doğrulama {{.Data.When}} tarihinde {{if eq .Data.Action "enabled"}}açıldı{{else}}kapatıldı{{end}}.
+
+Bu değişikliği siz yapmadıysanız hemen şifrenizi sıfırlayın ve destek ekibiyle iletişime geçin.

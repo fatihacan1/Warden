@@ -2,33 +2,34 @@
 <div class="head">
   <div>
     <h1>Emails</h1>
-    <p class="lede">Every email Warden sends. Edit the wording and design, preview it with sample data, send yourself a test. Saved templates apply to all replicas within 15 seconds.</p>
+    <p class="lede">Every email Warden sends, in every language. Edit the wording and design, preview it with sample data, send yourself a test. Saved templates apply to all replicas within 15 seconds.</p>
   </div>
   {{if .SMTP}}<span class="tag tag-ok">Sending as {{.From}}</span>{{else}}<span class="tag tag-warn">SMTP off: emails go to the log</span>{{end}}
 </div>
 
+<p class="help">Each user gets emails in their own language; users without one get the default, <strong>{{flag .Default.Code}} {{.Default.Name}}</strong> (change it in <a href="/admin/settings">Settings</a>).</p>
+
 <section class="panel">
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Template</th><th class="hide-sm">When it is sent</th><th>Version</th><th></th></tr></thead>
+      <thead><tr><th>Template</th><th class="hide-sm">When it is sent</th><th>Languages</th></tr></thead>
       <tbody>
-        <tr>
-          <td><strong>Layout</strong></td>
-          <td class="hide-sm muted">The frame around every HTML email: header, footer, colors.</td>
-          <td>{{if .LayoutCustom}}<span class="tag tag-accent">Customized</span>{{else}}<span class="tag">Built-in</span>{{end}}</td>
-          <td><a class="btn btn-small" href="/admin/emails/layout">Edit</a></td>
-        </tr>
-        {{range .Templates}}
+        {{range .Templates}}{{$name := .Name}}
         <tr>
           <td><strong>{{.Title}}</strong><br><span class="muted small mono">{{.Name}}</span></td>
           <td class="hide-sm muted">{{.Description}}</td>
-          <td>{{if .Customized}}<span class="tag tag-accent">Customized</span><br><span class="muted small">{{date .UpdatedAt}}</span>{{else}}<span class="tag">Built-in</span>{{end}}</td>
-          <td><a class="btn btn-small" href="/admin/emails/{{.Name}}">Edit</a></td>
+          <td>
+            <div class="row">
+            {{range .Langs}}
+              <a class="btn btn-small" href="/admin/emails/{{$name}}?lang={{.Code}}" title="{{if .Customized}}Customized {{date .UpdatedAt}}{{else}}Built-in{{end}}">{{flag .Code}} {{.Code}}{{if .Customized}} <span class="dot dot-ok"></span>{{end}}</a>
+            {{end}}
+            </div>
+          </td>
         </tr>
         {{end}}
       </tbody>
     </table>
   </div>
 </section>
-<p class="help mt-20">Templates use Go template syntax. HTML output is escaped automatically, so values like links cannot inject markup. The subject is always a single line.</p>
+<p class="help mt-20"><span class="dot dot-ok"></span>customized. Templates use Go template syntax. HTML output is escaped automatically, so values like links cannot inject markup. The subject is always a single line.</p>
 {{end}}{{end}}

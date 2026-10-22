@@ -16,6 +16,7 @@ type User struct {
 	Name            string
 	AvatarKey       string
 	Roles           []string
+	Locale          string // preferred email language; "" = instance default
 	TOTPSecret      []byte // encrypted at rest
 	TOTPEnabledAt   *time.Time
 	TOTPLastStep    int64
@@ -73,6 +74,11 @@ type RequestMeta struct {
 	IP        string
 	UserAgent string
 	RequestID string
+	// Country is an ISO code reported by a trusted proxy (Cloudflare,
+	// Vercel, CloudFront), or empty. Warden has no GeoIP database.
+	Country string
+	// Locale is the best supported language from Accept-Language, or empty.
+	Locale string
 }
 
 // Authentication methods (RFC 8176 "amr" values where they exist).
@@ -95,4 +101,5 @@ const (
 	RevokePasswordChange  = "password_changed"
 	RevokeAccountDisabled = "account_disabled"
 	RevokeAccountLinked   = "account_linked"
+	RevokeFromEmail       = "revoked_from_email"
 )

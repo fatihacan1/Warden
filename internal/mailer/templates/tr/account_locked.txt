@@ -1,0 +1,10 @@
+Çok fazla başarısız giriş denemesi
+
+{{.AppName}} hesabınız için {{.Data.Attempts}} kez yanlış şifre girildi. Hesabınızı korumak için şifreyle giriş {{.Data.Duration}} süreyle durduruldu.
+
+Son deneme: {{.Data.IP}}
+Zaman:      {{.Data.When}}
+
+Deneyen sizseniz biraz bekleyip tekrar deneyin ya da "Şifremi unuttum" ile şifrenizi sıfırlayın.
+
+Siz değilseniz şifreniz hâlâ güvende; yine de değiştirmeyi ve iki adımlı doğrulamayı açmayı düşünün.

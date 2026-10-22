@@ -1,0 +1,5 @@
+{{template "layout_start" .}}
+<h1 style="font-size:20px;margin:0 0 12px">İki adımlı doğrulama {{if eq .Data.Action "enabled"}}açıldı{{else}}kapatıldı{{end}}</h1>
+<p style="margin:0 0 8px">{{.AppName}} hesabınızda iki adımlı doğrulama {{.Data.When}} tarihinde {{if eq .Data.Action "enabled"}}açıldı{{else}}kapatıldı{{end}}.</p>
+<p style="margin:0;color:#55554f;font-size:13px">Bu değişikliği siz yapmadıysanız hemen şifrenizi sıfırlayın ve destek ekibiyle iletişime geçin.</p>
+{{template "layout_end" .}}

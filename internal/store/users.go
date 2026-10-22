@@ -11,13 +11,13 @@ import (
 	"github.com/fatihacan1/warden/internal/domain"
 )
 
-const userColumns = `id, email, email_verified_at, password_hash, name, avatar_key, roles,
+const userColumns = `id, email, email_verified_at, password_hash, name, avatar_key, roles, locale,
 	totp_secret, totp_enabled_at, totp_last_step, disabled_at, last_sign_in_at, created_at, updated_at`
 
 func scanUser(row pgx.Row) (*domain.User, error) {
 	var u domain.User
 	var email, pwHash, avatar *string
-	err := row.Scan(&u.ID, &email, &u.EmailVerifiedAt, &pwHash, &u.Name, &avatar, &u.Roles,
+	err := row.Scan(&u.ID, &email, &u.EmailVerifiedAt, &pwHash, &u.Name, &avatar, &u.Roles, &u.Locale,
 		&u.TOTPSecret, &u.TOTPEnabledAt, &u.TOTPLastStep, &u.DisabledAt, &u.LastSignInAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, mapErr(err)
@@ -35,10 +35,10 @@ func (s *Store) CreateUser(ctx context.Context, u *domain.User) error {
 		u.Roles = []string{}
 	}
 	err := s.db.QueryRow(ctx, `
-		INSERT INTO users (id, email, email_verified_at, password_hash, name, avatar_key, roles)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO users (id, email, email_verified_at, password_hash, name, avatar_key, roles, locale)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING created_at, updated_at`,
-		u.ID, nullable(u.Email), u.EmailVerifiedAt, nullable(u.PasswordHash), u.Name, nullable(u.AvatarKey), u.Roles,
+		u.ID, nullable(u.Email), u.EmailVerifiedAt, nullable(u.PasswordHash), u.Name, nullable(u.AvatarKey), u.Roles, u.Locale,
 	).Scan(&u.CreatedAt, &u.UpdatedAt)
 	return mapErr(err)
 }
@@ -108,6 +108,35 @@ func (s *Store) ListUsers(ctx context.Context, query string, limit, offset int) 
 
 func (s *Store) UpdateUserProfile(ctx context.Context, id uuid.UUID, name string) error {
 	return execOne(ctx, s.db, `UPDATE users SET name = $2, updated_at = now() WHERE id = $1`, id, name)
+}
+
+func (s *Store) UpdateUserLocale(ctx context.Context, id uuid.UUID, locale string) error {
+	return execOne(ctx, s.db, `UPDATE users SET locale = $2, updated_at = now() WHERE id = $1`, id, locale)
+}
+
+// SeenDevice records a sign-in from a device and reports whether the device
+// is new for this user.
+func (s *Store) SeenDevice(ctx context.Context, userID uuid.UUID, fingerprint []byte, label string) (bool, error) {
+	var inserted bool
+	err := s.db.QueryRow(ctx, `
+		INSERT INTO user_devices (user_id, fingerprint, label) VALUES ($1, $2, $3)
+		ON CONFLICT (user_id, fingerprint) DO UPDATE SET last_seen = now(), label = EXCLUDED.label
+		RETURNING (xmax = 0)`, userID, fingerprint, cleanText(label, 120)).Scan(&inserted)
+	return inserted, mapErr(err)
+}
+
+// HasDevices reports whether any device is recorded for the user.
+func (s *Store) HasDevices(ctx context.Context, userID uuid.UUID) (bool, error) {
+	var ok bool
+	err := s.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM user_devices WHERE user_id = $1)`, userID).Scan(&ok)
+	return ok, err
+}
+
+// DeleteStaleDevices forgets devices unused since before; signing in from
+// them again counts as a new device.
+func (s *Store) DeleteStaleDevices(ctx context.Context, before time.Time) (int64, error) {
+	tag, err := s.db.Exec(ctx, `DELETE FROM user_devices WHERE last_seen < $1`, before)
+	return tag.RowsAffected(), err
 }
 
 func (s *Store) UpdateUserAvatar(ctx context.Context, id uuid.UUID, key string) error {

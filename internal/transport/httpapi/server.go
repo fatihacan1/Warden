@@ -133,6 +133,10 @@ func (s *Server) routes() {
 	sv := a.Group("/v1/server", noStore, jsonBody(maxJSONBody), s.requireSecretKey())
 	s.serverRoutes(sv)
 
+	// Links from "new sign-in" emails: plain pages, no JSON, no app key.
+	a.Get("/v1/auth/sessions/end", global, noStore, s.endSessionPage)
+	a.Post("/v1/auth/sessions/end", global, noStore, strict, s.endSession)
+
 	v1 := a.Group("/v1", global, noStore, s.publishableKey())
 
 	ab := v1.Group("/auth", jsonBody(maxJSONBody))

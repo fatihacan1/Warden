@@ -19,6 +19,9 @@ type SignUpInput struct {
 	Email    string
 	Password string
 	Name     string
+	// Locale is the email language; empty uses Accept-Language, then the
+	// instance default.
+	Locale string
 }
 
 // SignUp creates a password account.
@@ -37,7 +40,8 @@ func (s *Service) SignUp(ctx context.Context, in SignUpInput, meta domain.Reques
 	if err != nil {
 		return nil, err
 	}
-	u := &domain.User{ID: uuid.Must(uuid.NewV7()), Email: email, PasswordHash: hash, Name: cleanName(in.Name), Roles: []string{}}
+	u := &domain.User{ID: uuid.Must(uuid.NewV7()), Email: email, PasswordHash: hash, Name: cleanName(in.Name), Roles: []string{},
+		Locale: firstLocale(in.Locale, meta.Locale)}
 
 	var pair *TokenPair
 	err = s.Store.InTx(ctx, func(tx *store.Store) error {
@@ -106,6 +110,7 @@ func (s *Service) SignIn(ctx context.Context, rawEmail, pw string, meta domain.R
 	}
 	if !match {
 		n := s.Lockout.Fail(ctx, lk)
+		s.noticeLocked(ctx, u, n, meta)
 		s.metric("sign_in", "invalid")
 		s.audit(ctx, u.ID, "user.sign_in_failed", meta, map[string]any{"reason": "bad_password", "failures": n})
 		return nil, domain.ErrInvalidCredentials

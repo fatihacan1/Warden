@@ -14,6 +14,7 @@ import (
 	"github.com/fatihacan1/warden/internal/crypto/randtoken"
 	"github.com/fatihacan1/warden/internal/domain"
 	"github.com/fatihacan1/warden/internal/events"
+	"github.com/fatihacan1/warden/internal/i18n"
 	"github.com/fatihacan1/warden/internal/mailer"
 	"github.com/fatihacan1/warden/internal/platform/objectstore"
 	"github.com/fatihacan1/warden/internal/store"
@@ -115,7 +116,7 @@ func (s *Service) ChangePassword(ctx context.Context, userID, sid uuid.UUID, cur
 		if err := s.Events.Event(ctx, tx, events.UserPasswordChange, userID, map[string]any{"via": "change"}); err != nil {
 			return err
 		}
-		return s.Events.Email(ctx, tx, u.Email, mailer.TemplatePasswordChanged, map[string]string{"When": time.Now().UTC().Format(time.RFC1123)})
+		return s.Events.Email(ctx, tx, u.Email, s.locale(u), mailer.TemplatePasswordChanged, map[string]string{"When": i18n.Time(time.Now(), s.locale(u))})
 	})
 	if err != nil {
 		return err
@@ -339,6 +340,7 @@ type CreateUserInput struct {
 	Name          string
 	Roles         []string
 	EmailVerified bool
+	Locale        string
 }
 
 // CreateUser creates an account on behalf of an operator. It ignores the
@@ -353,7 +355,7 @@ func (s *Service) CreateUser(ctx context.Context, in CreateUserInput, actor stri
 	if err != nil {
 		return nil, err
 	}
-	u := &domain.User{ID: uuid.Must(uuid.NewV7()), Email: email, Name: cleanName(in.Name), Roles: roles}
+	u := &domain.User{ID: uuid.Must(uuid.NewV7()), Email: email, Name: cleanName(in.Name), Roles: roles, Locale: firstLocale(in.Locale)}
 	if in.Password != "" {
 		if err := s.checkNewPassword(ctx, in.Password, email); err != nil {
 			return nil, err

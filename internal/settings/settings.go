@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"slices"
 	"strings"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/fatihacan1/warden/internal/config"
 	"github.com/fatihacan1/warden/internal/domain"
+	"github.com/fatihacan1/warden/internal/i18n"
 )
 
 // Runtime are the editable settings.
@@ -36,6 +38,12 @@ type Runtime struct {
 	AllowedRedirectURIs      []string `json:"allowed_redirect_uris"`
 	CORSOrigins              []string `json:"cors_origins"`
 	RequirePublishableKey    bool     `json:"require_publishable_key"`
+	DefaultLocale            string   `json:"default_locale"`
+	NotifyNewDevice          bool     `json:"notify_new_device"`
+	NotifyAccountLocked      bool     `json:"notify_account_locked"`
+	// AdminIPAllowlist restricts the admin UI to AdminAllowedIPs.
+	AdminIPAllowlist bool     `json:"admin_ip_allowlist"`
+	AdminAllowedIPs  []string `json:"admin_allowed_ips"`
 }
 
 // Store persists the admin overrides.
@@ -75,6 +83,11 @@ func FromConfig(c *config.Config) Runtime {
 		AllowedRedirectURIs:      slices.Clone(c.Auth.AllowedRedirectURIs),
 		CORSOrigins:              slices.Clone(c.HTTP.CORSOrigins),
 		RequirePublishableKey:    c.Auth.RequirePublishableKey,
+		DefaultLocale:            c.Auth.DefaultLocale,
+		NotifyNewDevice:          c.Auth.NotifyNewDevice,
+		NotifyAccountLocked:      c.Auth.NotifyAccountLocked,
+		AdminIPAllowlist:         len(c.Admin.AllowedIPs) > 0,
+		AdminAllowedIPs:          slices.Clone(c.Admin.AllowedIPs),
 	}
 }
 
@@ -180,6 +193,8 @@ func (r *Runtime) normalize() {
 		origins = append(origins, strings.TrimRight(strings.TrimSpace(o), "/"))
 	}
 	r.CORSOrigins = cleanList(origins)
+	r.AdminAllowedIPs = cleanList(r.AdminAllowedIPs)
+	r.DefaultLocale = strings.ToLower(strings.TrimSpace(r.DefaultLocale))
 }
 
 func cleanList(in []string) []string {
@@ -232,6 +247,20 @@ func (r *Runtime) Validate(production bool) error {
 		if o == "*" || strings.EqualFold(o, "null") || err != nil || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
 			add("CORS origins must be exact origins like https://app.example.com (no *, paths or null): %q", o)
 		}
+	}
+	if r.DefaultLocale != "" && !i18n.Supported(r.DefaultLocale) {
+		add("Default email language %q is not supported.", r.DefaultLocale)
+	}
+	if len(r.AdminAllowedIPs) > 100 {
+		add("At most 100 admin IP entries.")
+	}
+	for _, p := range r.AdminAllowedIPs {
+		if _, _, err := net.ParseCIDR(p); err != nil && net.ParseIP(p) == nil {
+			add("Admin allowlist entries must be IPs or CIDR ranges like 203.0.113.7 or 10.0.0.0/8: %q", p)
+		}
+	}
+	if r.AdminIPAllowlist && len(r.AdminAllowedIPs) == 0 {
+		add("Add at least one IP before turning on the admin IP allowlist.")
 	}
 	return errors.Join(errs...)
 }

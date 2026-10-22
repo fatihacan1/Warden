@@ -70,6 +70,7 @@
         <dl class="kv">
           <dt>ID</dt><dd class="mono">{{$u.ID}}</dd>
           <dt>Name</dt><dd>{{if $u.Name}}{{$u.Name}}{{else}}<span class="muted">-</span>{{end}}</dd>
+          <dt>Language</dt><dd>{{if $u.Locale}}{{flag $u.Locale}} {{langName $u.Locale}}{{else}}{{flag .Default}} {{langName .Default}} <span class="muted">(instance default)</span>{{end}}</dd>
           <dt>Roles</dt><dd>{{range $u.Roles}}<span class="tag tag-accent">{{.}}</span> {{else}}<span class="muted">No roles assigned</span>{{end}}</dd>
           <dt>Password</dt><dd>{{if $u.HasPassword}}Set{{else}}None (social only){{end}}</dd>
           <dt>Recovery codes</dt><dd class="num">{{if $u.MFAEnabled}}{{.RecoveryCodes}} unused{{else}}-{{end}}</dd>
@@ -89,6 +90,21 @@
           <p class="help">Included in the <code>roles</code> claim of access tokens after the next refresh.</p>
         </div>
         <button class="btn" type="submit">Save roles</button>
+      </form>
+    </section>
+    <section class="panel">
+      <header><h2>Email language</h2></header>
+      <form class="panel-body" method="post" action="/admin/users/{{$u.ID}}/locale">
+        <input type="hidden" name="_csrf" value="{{$csrf}}">
+        <fieldset class="lang-pick">
+          <legend class="sr-only">Email language</legend>
+          <label class="choice"><input type="radio" name="locale" value="" {{if not $u.Locale}}checked{{end}}> <span>Instance default ({{flag .Default}})</span></label>
+          {{range .Locales}}
+          <label class="choice"><input type="radio" name="locale" value="{{.Code}}" {{if eq $u.Locale .Code}}checked{{end}}> <span>{{flag .Code}} {{.Name}}</span></label>
+          {{end}}
+        </fieldset>
+        <p class="help">Users can also change it from your app (<code>PATCH /v1/me {"locale": "tr"}</code>).</p>
+        <button class="btn" type="submit">Save language</button>
       </form>
     </section>
   </div>

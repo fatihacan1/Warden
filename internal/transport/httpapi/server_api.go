@@ -100,12 +100,13 @@ func (s *Server) serverCreateUser(c fiber.Ctx) error {
 		Name          string   `json:"name"`
 		Roles         []string `json:"roles"`
 		EmailVerified bool     `json:"email_verified"`
+		Locale        string   `json:"locale"`
 	}
 	if err := decode(c, &in); err != nil {
 		return err
 	}
 	u, err := s.auth.CreateUser(c.Context(), auth.CreateUserInput{
-		Email: in.Email, Password: in.Password, Name: in.Name, Roles: in.Roles, EmailVerified: in.EmailVerified,
+		Email: in.Email, Password: in.Password, Name: in.Name, Roles: in.Roles, EmailVerified: in.EmailVerified, Locale: in.Locale,
 	}, actor(c), meta(c))
 	if err != nil {
 		return err
@@ -165,6 +166,7 @@ func (s *Server) serverUpdateUser(c fiber.Ctx) error {
 		Name     *string   `json:"name"`
 		Roles    *[]string `json:"roles"`
 		Disabled *bool     `json:"disabled"`
+		Locale   *string   `json:"locale"`
 	}
 	if err := decode(c, &in); err != nil {
 		return err
@@ -179,6 +181,11 @@ func (s *Server) serverUpdateUser(c fiber.Ctx) error {
 	}
 	if in.Roles != nil {
 		if err := s.auth.SetRoles(c.Context(), id, *in.Roles, actor(c)); err != nil {
+			return err
+		}
+	}
+	if in.Locale != nil {
+		if _, err := s.auth.SetLocale(c.Context(), id, *in.Locale); err != nil {
 			return err
 		}
 	}

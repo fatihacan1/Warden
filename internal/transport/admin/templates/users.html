@@ -2,7 +2,7 @@
 <div class="head">
   <div>
     <h1>Users</h1>
-    <p class="lede"><span class="num">{{.Total}}</span> {{if .Query}}matching “{{.Query}}”{{else}}accounts{{end}}</p>
+    <p class="lede"><span class="num">{{.Total}}</span> {{if .Query}}matching “{{.Query}}”{{else}}accounts{{end}}{{if gt .Pages 1}} · showing <span class="num">{{.From}}–{{.To}}</span>{{end}}</p>
   </div>
 </div>
 <form class="search" method="get" action="/admin/users" role="search">
@@ -12,8 +12,9 @@
 <section class="panel">
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Email</th><th class="hide-sm">Name</th><th>Status</th><th class="hide-sm">Created</th><th class="hide-sm">Last sign-in</th></tr></thead>
+      <thead><tr><th>Email</th><th class="hide-sm">Name</th><th>Status</th><th class="hide-sm" title="Email language">Lang</th><th class="hide-sm">Created</th><th class="hide-sm">Last sign-in</th></tr></thead>
       <tbody>
+      {{$def := .Default}}
       {{range .Users}}
         <tr>
           <td><a href="/admin/users/{{.ID}}">{{if .Email}}{{.Email}}{{else}}<span class="mono">{{.ID}}</span>{{end}}</a></td>
@@ -24,21 +25,26 @@
             {{if .MFAEnabled}}<span class="tag">2FA</span>{{end}}
             {{range .Roles}}<span class="tag tag-accent">{{.}}</span>{{end}}
           </td>
+          <td class="hide-sm">{{if .Locale}}<span title="{{langName .Locale}}">{{flag .Locale}} {{.Locale}}</span>{{else}}<span class="muted" title="Instance default">{{flag $def}} default</span>{{end}}</td>
           <td class="hide-sm num">{{date .CreatedAt}}</td>
           <td class="hide-sm num">{{date .LastSignInAt}}</td>
         </tr>
       {{else}}
-        <tr><td colspan="5" class="muted">No users found.</td></tr>
+        <tr><td colspan="6" class="muted">No users found.</td></tr>
       {{end}}
       </tbody>
     </table>
   </div>
 </section>
-{{if gt .Pages 1}}
-<div class="row mt-16">
-  {{if .HasPrev}}<a class="btn btn-small" href="/admin/users?q={{.Query}}&page={{sub .Page 1}}">Previous</a>{{end}}
-  <span class="muted num">Page {{.Page}} of {{.Pages}}</span>
-  {{if .HasNext}}<a class="btn btn-small" href="/admin/users?q={{.Query}}&page={{add .Page 1}}">Next</a>{{end}}
-</div>
+{{if gt .Pages 1}}{{$q := .Query}}{{$cur := .Page}}
+<nav class="pager mt-16" aria-label="Pages">
+  {{if .HasPrev}}<a class="btn btn-small" href="/admin/users?q={{$q}}&page={{sub .Page 1}}" rel="prev">Previous</a>{{else}}<span class="btn btn-small" aria-disabled="true">Previous</span>{{end}}
+  {{range .Window}}
+    {{if eq . 0}}<span class="muted">…</span>
+    {{else if eq . $cur}}<span class="btn btn-small pager-current" aria-current="page">{{.}}</span>
+    {{else}}<a class="btn btn-small" href="/admin/users?q={{$q}}&page={{.}}">{{.}}</a>{{end}}
+  {{end}}
+  {{if .HasNext}}<a class="btn btn-small" href="/admin/users?q={{$q}}&page={{add .Page 1}}" rel="next">Next</a>{{else}}<span class="btn btn-small" aria-disabled="true">Next</span>{{end}}
+</nav>
 {{end}}
 {{end}}{{end}}

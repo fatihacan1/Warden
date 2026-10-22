@@ -32,6 +32,7 @@ import (
 	"github.com/fatihacan1/warden/internal/config"
 	"github.com/fatihacan1/warden/internal/crypto/randtoken"
 	"github.com/fatihacan1/warden/internal/domain"
+	"github.com/fatihacan1/warden/internal/i18n"
 	"github.com/fatihacan1/warden/internal/mailer"
 	"github.com/fatihacan1/warden/internal/oauth"
 	"github.com/fatihacan1/warden/internal/observability"
@@ -42,7 +43,7 @@ import (
 	"github.com/fatihacan1/warden/internal/webhooks"
 )
 
-//go:embed templates/*.html static/* static/providers/*
+//go:embed templates/*.html static/* static/providers/* static/flags/*
 var assets embed.FS
 
 // Deps are the collaborators of the admin server.
@@ -162,6 +163,7 @@ func (s *Server) routes() {
 		})
 		return
 	}
+	a.Use("/admin", s.ipAllowlist)
 	a.Get("/", func(c fiber.Ctx) error { return c.Redirect().To("/admin") })
 	a.Get("/admin/login", s.loginPage)
 	a.Post("/admin/login", s.originCheck, s.login)
@@ -181,6 +183,7 @@ func (s *Server) routes() {
 	g.Post("/users/:id/enable", s.originCheck, s.csrf, s.enableUser)
 	g.Post("/users/:id/revoke", s.originCheck, s.csrf, s.revokeUser)
 	g.Post("/users/:id/roles", s.originCheck, s.csrf, s.rolesUser)
+	g.Post("/users/:id/locale", s.originCheck, s.csrf, s.localeUser)
 	g.Get("/keys", s.keysPage)
 	g.Post("/keys/rotate", s.originCheck, s.csrf, s.rotateKeys)
 	g.Get("/setup", s.setupPage)
@@ -260,6 +263,11 @@ var funcs = template.FuncMap{
 	},
 	"providerIcon": providerIcon,
 	"sub":          func(a, b int) int { return a - b },
+	"flag": func(code string) template.HTML {
+		l := i18n.Lookup(code)
+		return template.HTML(`<img class="flag" src="/admin/static/flags/` + l.Code + `.svg" alt="" width="18" height="12">`) // #nosec G203 -- fixed list of codes
+	},
+	"langName": func(code string) string { return i18n.Lookup(code).Name },
 }
 
 // providerIcon inlines a provider's brand mark (Simple Icons, CC0) so it can
@@ -338,6 +346,8 @@ var flashes = map[string]string{
 	"emailreset":     "Template reset to the built-in version.",
 	"emailtest":      "Test email sent.",
 	"settings":       "Settings saved. They apply to every replica within 15 seconds.",
+	"settingsip":     "Settings saved. Your current address was added to the admin allowlist so you stay signed in.",
+	"locale":         "Email language updated.",
 	"envreset":       "Admin overrides removed. Environment values apply again.",
 }
 
@@ -462,7 +472,11 @@ func (s *Server) audit(c fiber.Ctx, typ string, data map[string]any) {
 }
 
 func back(c fiber.Ctx, path, ok string) error {
-	return c.Redirect().Status(fiber.StatusSeeOther).To(path + "?ok=" + url.QueryEscape(ok))
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	return c.Redirect().Status(fiber.StatusSeeOther).To(path + sep + "ok=" + url.QueryEscape(ok))
 }
 
 // backErr carries the error message in a short-lived cookie rather than the

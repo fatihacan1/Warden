@@ -86,7 +86,7 @@ func setup(t *testing.T) (*fakeStore, *fakePublisher, *fakeSender, *Relay, *secr
 	st := &fakeStore{completed: map[int64]bool{}, retried: map[int64]bool{}}
 	pub := &fakePublisher{}
 	snd := &fakeSender{}
-	r, err := mailer.NewRenderer(func() string { return "Test" })
+	r, err := mailer.NewRenderer(func() string { return "Test" }, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -45,8 +45,8 @@ type Query {
 }
 
 type Mutation {
-  "Change the signed-in user's display name."
-  updateProfile(name: String!): User!
+  "Change the signed-in user's display name and/or email language (en, tr; empty = default)."
+  updateProfile(name: String, locale: String): User!
   "Sign out one device of the signed-in user."
   revokeSession(id: ID!): Boolean!
   "Sign out every other device; returns how many were signed out."
@@ -64,6 +64,8 @@ type User {
   name: String!
   avatarUrl: String
   roles: [String!]!
+  "Email language; empty = instance default"
+  locale: String!
   mfaEnabled: Boolean!
   hasPassword: Boolean!
   "RFC 3339"
@@ -243,6 +245,7 @@ type gqlUser struct {
 	Name          string
 	AvatarURL     *string
 	Roles         []string
+	Locale        string
 	MFAEnabled    bool
 	HasPassword   bool
 	CreatedAt     string
@@ -269,7 +272,7 @@ func optionalTime(t *time.Time) *string {
 func (r *gqlRoot) toUser(ctx context.Context, u *domain.User) *gqlUser {
 	return &gqlUser{
 		ID: graphql.ID(u.ID.String()), Email: optional(u.Email), EmailVerified: u.EmailVerified(), Name: u.Name,
-		AvatarURL: optional(r.s.auth.AvatarURL(ctx, u)), Roles: u.Roles, MFAEnabled: u.MFAEnabled(),
+		AvatarURL: optional(r.s.auth.AvatarURL(ctx, u)), Roles: u.Roles, Locale: u.Locale, MFAEnabled: u.MFAEnabled(),
 		HasPassword: u.HasPassword(), CreatedAt: rfc3339(u.CreatedAt), LastSignInAt: optionalTime(u.LastSignInAt),
 	}
 }
@@ -384,12 +387,25 @@ func (r *gqlRoot) User(ctx context.Context, args struct{ ID graphql.ID }) (*gqlU
 	return r.toUser(ctx, u), nil
 }
 
-func (r *gqlRoot) UpdateProfile(ctx context.Context, args struct{ Name string }) (*gqlUser, error) {
+func (r *gqlRoot) UpdateProfile(ctx context.Context, args struct {
+	Name   *string
+	Locale *string
+}) (*gqlUser, error) {
 	p, err := r.user(ctx)
 	if err != nil {
 		return nil, err
 	}
-	u, err := r.s.auth.UpdateProfile(ctx, p.userID, args.Name)
+	if args.Locale != nil {
+		if _, err := r.s.auth.SetLocale(ctx, p.userID, *args.Locale); err != nil {
+			return nil, r.fail(ctx, err)
+		}
+	}
+	if args.Name != nil {
+		if _, err := r.s.auth.UpdateProfile(ctx, p.userID, *args.Name); err != nil {
+			return nil, r.fail(ctx, err)
+		}
+	}
+	u, err := r.s.auth.GetUser(ctx, p.userID)
 	if err != nil {
 		return nil, r.fail(ctx, err)
 	}

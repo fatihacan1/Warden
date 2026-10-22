@@ -1,0 +1,7 @@
+E-posta adresinizi doğrulayın
+
+{{.AppName}} hesabınızın e-posta adresini doğrulamak için aşağıdaki bağlantıyı açın:
+
+{{.Data.Link}}
+
+Bu bağlantı {{.Data.ExpiresIn}} geçerlidir. Hesap oluşturmadıysanız bu e-postayı yok sayabilirsiniz.

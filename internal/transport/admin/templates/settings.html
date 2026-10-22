@@ -95,6 +95,60 @@
     </div>
   </section>
 
+  <section class="panel">
+    <header><h2>Language</h2></header>
+    <div class="panel-body">
+      <fieldset class="lang-pick">
+        <legend>Default email language</legend>
+        {{range .Locales}}
+        <label class="choice"><input type="radio" name="default_locale" value="{{.Code}}" {{if eq $s.DefaultLocale .Code}}checked{{end}}> <span>{{flag .Code}} {{.Name}}</span></label>
+        {{end}}
+      </fieldset>
+      <p class="help">Used for users who have not picked a language. A user's language is set from the app (<code>locale</code> on sign-up or <code>PATCH /v1/me</code>), from their browser's language on sign-up, or on their page here. Edit the wording per language under <a href="/admin/emails">Emails</a>.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <header><h2>Security notifications</h2></header>
+    <div class="panel-body">
+      <div class="toggle-row">
+        <div>
+          <h3>Sign-in from a new device</h3>
+          <p class="help">Email the user the first time their account signs in from a browser or app it has not used in 180 days: device, IP, country (behind Cloudflare or a similar proxy), method and time, with a button that ends that session. A new account's first device never triggers it. At most 3 per account per hour.</p>
+        </div>
+        <label class="switch"><input type="checkbox" name="notify_new_device" {{if $s.NotifyNewDevice}}checked{{end}} aria-label="Email on sign-in from a new device"></label>
+      </div>
+      <div class="toggle-row">
+        <div>
+          <h3>Account locked</h3>
+          <p class="help">Email the user once when wrong passwords reach the lockout threshold, so they learn someone is guessing.</p>
+        </div>
+        <label class="switch"><input type="checkbox" name="notify_account_locked" {{if $s.NotifyAccountLocked}}checked{{end}} aria-label="Email when the account is locked"></label>
+      </div>
+      <p class="help mb-0">Password and two-factor changes are always notified.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <header><h2>Admin access</h2></header>
+    <div class="panel-body">
+      {{if .AllowlistForcedOff}}<p class="notice notice-err">ADMIN_IP_ALLOWLIST_DISABLED=true is set: the list below is ignored until you remove it and restart.</p>{{end}}
+      <div class="toggle-row">
+        <div>
+          <h3>Only allow these addresses</h3>
+          <p class="help">Requests to this admin UI from any other address get 403. Turning it on adds your current address, <code>{{.MyIP}}</code>, so you cannot lock yourself out.</p>
+        </div>
+        <label class="switch"><input type="checkbox" name="admin_ip_allowlist" {{if $s.AdminIPAllowlist}}checked{{end}} aria-label="Restrict admin access by IP"></label>
+      </div>
+      <div class="field">
+        <label for="admin_allowed_ips">Allowed IPs and ranges</label>
+        <textarea id="admin_allowed_ips" name="admin_allowed_ips" spellcheck="false" placeholder="203.0.113.7&#10;10.0.0.0/8">{{join $s.AdminAllowedIPs "\n"}}</textarea>
+        <p class="help">One per line: single addresses or CIDR ranges. The check uses the address that connects to this port; behind a reverse proxy that is the proxy.</p>
+      </div>
+      <p class="help mb-0"><strong>Do this at the network level first.</strong> Keep the admin port off the internet and reach it over a VPN, an SSH tunnel or a private network; a firewall or security group that only admits your office or VPN is stronger than any check inside the app. This list is a second layer. Locked out? Restart with <code>ADMIN_IP_ALLOWLIST_DISABLED=true</code>.</p>
+    </div>
+  </section>
+
   <div class="row">
     <button class="btn btn-primary" type="submit">Save settings</button>
   </div>

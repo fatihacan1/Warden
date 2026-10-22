@@ -1,0 +1,14 @@
+{{template "layout_start" .}}
+<h1 style="font-size:20px;margin:0 0 12px">Hesabınıza yeni bir giriş yapıldı</h1>
+<p style="margin:0 0 8px">{{.AppName}} hesabınıza daha önce görmediğimiz bir cihazdan giriş yapıldı.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0;font-size:14px;border-collapse:collapse">
+<tr><td style="padding:4px 16px 4px 0;color:#77776f">Cihaz</td><td style="padding:4px 0">{{.Data.Device}}</td></tr>
+<tr><td style="padding:4px 16px 4px 0;color:#77776f">IP adresi</td><td style="padding:4px 0">{{.Data.IP}}</td></tr>
+{{if .Data.Location}}<tr><td style="padding:4px 16px 4px 0;color:#77776f">Konum</td><td style="padding:4px 0">{{.Data.Location}}</td></tr>{{end}}
+<tr><td style="padding:4px 16px 4px 0;color:#77776f">Yöntem</td><td style="padding:4px 0">{{.Data.Method}}</td></tr>
+<tr><td style="padding:4px 16px 4px 0;color:#77776f">Zaman</td><td style="padding:4px 0">{{.Data.When}}</td></tr>
+</table>
+<p style="margin:0 0 8px">Giriş yapan sizseniz bu e-postayı yok sayabilirsiniz.</p>
+{{if .Data.SignOutLink}}<p style="margin:24px 0"><a href="{{.Data.SignOutLink}}" style="display:inline-block;background:#1d1d1b;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:6px;font-weight:600">Ben değilim: o cihazın oturumunu kapat</a></p>{{end}}
+<p style="margin:0;color:#55554f;font-size:13px">Bu girişi tanımıyorsanız o cihazın oturumunu kapatın ve hemen şifrenizi değiştirin.</p>
+{{template "layout_end" .}}

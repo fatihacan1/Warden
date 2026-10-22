@@ -15,6 +15,7 @@ import (
 	"github.com/fatihacan1/warden/internal/crypto/randtoken"
 	"github.com/fatihacan1/warden/internal/domain"
 	"github.com/fatihacan1/warden/internal/events"
+	"github.com/fatihacan1/warden/internal/i18n"
 	"github.com/fatihacan1/warden/internal/mailer"
 	"github.com/fatihacan1/warden/internal/store"
 )
@@ -247,7 +248,7 @@ func (s *Service) EnableTOTP(ctx context.Context, userID uuid.UUID, code string,
 		if err := s.Events.Event(ctx, tx, events.UserMFAEnabled, userID, nil); err != nil {
 			return err
 		}
-		return s.Events.Email(ctx, tx, u.Email, mailer.TemplateMFAChanged, map[string]string{"Action": "enabled", "When": time.Now().UTC().Format(time.RFC1123)})
+		return s.Events.Email(ctx, tx, u.Email, s.locale(u), mailer.TemplateMFAChanged, map[string]string{"Action": "enabled", "When": i18n.Time(time.Now(), s.locale(u))})
 	})
 	if err != nil {
 		return nil, err
@@ -278,7 +279,7 @@ func (s *Service) DisableTOTP(ctx context.Context, userID uuid.UUID, code string
 		if err := s.Events.Event(ctx, tx, events.UserMFADisabled, userID, nil); err != nil {
 			return err
 		}
-		return s.Events.Email(ctx, tx, u.Email, mailer.TemplateMFAChanged, map[string]string{"Action": "disabled", "When": time.Now().UTC().Format(time.RFC1123)})
+		return s.Events.Email(ctx, tx, u.Email, s.locale(u), mailer.TemplateMFAChanged, map[string]string{"Action": "disabled", "When": i18n.Time(time.Now(), s.locale(u))})
 	})
 	if err == nil {
 		s.audit(ctx, userID, "user.mfa_disabled", meta, nil)

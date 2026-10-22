@@ -1,0 +1,16 @@
+Hesabınıza yeni bir giriş yapıldı
+
+{{.AppName}} hesabınıza daha önce görmediğimiz bir cihazdan giriş yapıldı.
+
+Cihaz:     {{.Data.Device}}
+IP adresi: {{.Data.IP}}
+{{if .Data.Location}}Konum:     {{.Data.Location}}
+{{end}}Yöntem:    {{.Data.Method}}
+Zaman:     {{.Data.When}}
+
+Giriş yapan sizseniz bu e-postayı yok sayabilirsiniz.
+{{if .Data.SignOutLink}}
+Ben değilim, o cihazın oturumunu kapat:
+{{.Data.SignOutLink}}
+{{end}}
+Bu girişi tanımıyorsanız o cihazın oturumunu kapatın ve hemen şifrenizi değiştirin.
