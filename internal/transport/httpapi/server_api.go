@@ -54,7 +54,9 @@ func (s *Server) publishableKey() fiber.Handler {
 // requireSecretKey authenticates the server API.
 func (s *Server) requireSecretKey() fiber.Handler {
 	return func(c fiber.Ctx) error {
-		if c.Get(fiber.HeaderOrigin) != "" || c.Get("Sec-Fetch-Mode") == "cors" {
+		// Browsers always send Origin on cross-origin fetches. Sec-Fetch-* is
+		// not a signal: Node's fetch sends Sec-Fetch-Mode too.
+		if c.Get(fiber.HeaderOrigin) != "" {
 			return domain.ErrSecretKeyInBrowser
 		}
 		raw, ok := bearer(c.Get(fiber.HeaderAuthorization))

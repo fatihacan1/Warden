@@ -462,3 +462,14 @@ func TestReencryptAfterKeyRotation(t *testing.T) {
 		t.Fatalf("service broken after rotating back: %d", r.Status)
 	}
 }
+
+// Node.js fetch (undici) sends Sec-Fetch-Mode: cors on every request; that
+// must not be mistaken for a browser.
+func TestServerAPIAcceptsNodeFetchHeaders(t *testing.T) {
+	sk := adminLogin(t).createKey("secret", "Node backend", "")
+	c := newClient(t)
+	c.headers["Sec-Fetch-Mode"] = "cors"
+	if r := c.do("GET", "/v1/server/users?email="+url.QueryEscape(randEmail()), nil, sk); r.Status != 404 {
+		t.Fatalf("server API from Node fetch: %d %s", r.Status, r.Body)
+	}
+}

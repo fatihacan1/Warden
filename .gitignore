@@ -19,3 +19,4 @@ Thumbs.db
 # Tooling output
 .playwright-cli/
 output/
+.impeccable/
