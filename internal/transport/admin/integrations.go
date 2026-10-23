@@ -84,16 +84,30 @@ func (s *Server) createAPIKey(c fiber.Ctx) error {
 	return s.reveal(c, "/admin/api-keys", map[string]string{"Kind": string(kind), "Name": k.Name, "Value": raw})
 }
 
+func (s *Server) apiKeyPage(c fiber.Ctx) error {
+	id, err := parseUserID(c)
+	if err != nil {
+		return err
+	}
+	for _, k := range s.APIKeys.List() {
+		if k.ID == id {
+			return s.render(c, fiber.StatusOK, "apikey", "apikeys", k.Name, map[string]any{"Key": k})
+		}
+	}
+	return fiber.ErrNotFound
+}
+
 func (s *Server) updateAPIKey(c fiber.Ctx) error {
 	id, err := parseUserID(c)
 	if err != nil {
 		return err
 	}
+	path := "/admin/api-keys/" + id.String()
 	if err := s.APIKeys.Update(c.Context(), id, c.FormValue("name"), lines(c.FormValue("origins"))); err != nil {
-		return backErr(c, "/admin/api-keys", err)
+		return backErr(c, path, err)
 	}
 	s.audit(c, "admin.api_key_updated", map[string]any{"key_id": id})
-	return back(c, "/admin/api-keys", "keysaved")
+	return back(c, path, "keysaved")
 }
 
 func (s *Server) revokeAPIKey(c fiber.Ctx) error {

@@ -190,6 +190,7 @@ func (s *Server) routes() {
 
 	g.Get("/api-keys", s.apiKeysPage)
 	g.Post("/api-keys", s.originCheck, s.csrf, s.createAPIKey)
+	g.Get("/api-keys/:id", s.apiKeyPage)
 	g.Post("/api-keys/:id", s.originCheck, s.csrf, s.updateAPIKey)
 	g.Post("/api-keys/:id/revoke", s.originCheck, s.csrf, s.revokeAPIKey)
 

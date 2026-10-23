@@ -22,40 +22,15 @@
       <header><h2>Keys</h2></header>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Name</th><th>Type</th><th>Key</th><th class="hide-sm">Last used</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Type</th><th>Key</th><th class="hide-sm">Last used</th><th><span class="sr-only">Actions</span></th></tr></thead>
           <tbody>
           {{range .Keys}}
             <tr>
-              <td>{{.Name}}{{if .AllowedOrigins}}<br><span class="muted small">{{join .AllowedOrigins ", "}}</span>{{end}}</td>
+              <td><a href="/admin/api-keys/{{.ID}}"><strong>{{.Name}}</strong></a>{{if .AllowedOrigins}}<br><span class="muted small">{{join .AllowedOrigins ", "}}</span>{{end}}</td>
               <td>{{if eq .Kind "secret"}}<span class="tag tag-accent">Secret</span>{{else}}<span class="tag">Publishable</span>{{end}}{{if not .Active}} <span class="tag tag-err">Revoked</span>{{end}}</td>
-              <td class="mono key-cell">{{.Hint}}{{if and (eq .Kind "publishable") .Active}} <button type="button" class="btn btn-small" data-copy="{{.Hint}}">Copy</button>{{end}}</td>
+              <td class="mono key-cell break">{{.Hint}}{{if and (eq .Kind "publishable") .Active}} <button type="button" class="btn btn-small" data-copy="{{.Hint}}">Copy</button>{{end}}</td>
               <td class="hide-sm num">{{if .LastUsedAt}}{{ago (deref .LastUsedAt)}}{{else}}<span class="muted">Never</span>{{end}}</td>
-              <td>
-                {{if .Active}}
-                <details class="row-menu">
-                  <summary class="btn btn-small">Edit</summary>
-                  <form method="post" action="/admin/api-keys/{{.ID}}" class="row-menu-body">
-                    <input type="hidden" name="_csrf" value="{{$csrf}}">
-                    <div class="field">
-                      <label for="name-{{.ID}}">Name</label>
-                      <input id="name-{{.ID}}" name="name" type="text" value="{{.Name}}">
-                    </div>
-                    {{if eq .Kind "publishable"}}
-                    <div class="field">
-                      <label for="origins-{{.ID}}">Allowed origins</label>
-                      <textarea id="origins-{{.ID}}" name="origins" spellcheck="false" placeholder="https://app.example.com">{{join .AllowedOrigins "\n"}}</textarea>
-                      <p class="help">One per line. Empty = any origin, and mobile apps.</p>
-                    </div>
-                    {{end}}
-                    <button class="btn btn-primary btn-small" type="submit">Save</button>
-                  </form>
-                  <form method="post" action="/admin/api-keys/{{.ID}}/revoke" class="row-menu-body sep-top" data-confirm="Revoke {{.Name}}? Apps or services using it stop working immediately.">
-                    <input type="hidden" name="_csrf" value="{{$csrf}}">
-                    <button class="btn btn-danger btn-small" type="submit">Revoke key</button>
-                  </form>
-                </details>
-                {{end}}
-              </td>
+              <td class="cell-action"><a class="btn btn-small" href="/admin/api-keys/{{.ID}}">Manage</a></td>
             </tr>
           {{else}}
             <tr><td colspan="5" class="muted">No keys yet. Create a publishable key for each app and a secret key for each backend.</td></tr>

@@ -365,3 +365,38 @@ input[type=email] { width: 100%; font: inherit; color: var(--ink); background: v
 .onboarding .check-result:not(:empty) { display: block; }
 @media (prefers-reduced-motion: reduce) { .onboard-progress span { transition: none; } }
 .setup-page [data-step] > header h2 { font-size: 22px; letter-spacing: -0.01em; }
+
+/* Full-width workspace: use the screen, keep prose readable */
+.admin-shell .page { max-width: none; }
+.admin-shell .page .lede, .admin-shell .page .prose p, .admin-shell .page > p { max-width: 90ch; }
+.cell-action { text-align: right; white-space: nowrap; width: 1%; }
+.danger-zone { border-color: color-mix(in srgb, var(--err) 40%, var(--line)); }
+
+/* Email editor: preview takes the height of the screen */
+.editor { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.editor > .stack > .panel:first-child { position: sticky; top: 16px; }
+.preview-frame { height: calc(100vh - 210px); min-height: 640px; }
+.code-editor .code-input { min-height: 46vh; }
+#text.code-input { min-height: 24vh; }
+
+/* Read-only code samples */
+pre.code-sample { color: var(--ink); }
+.tok-prop { color: #7a3fa0; }
+.tok-num { color: #b35a00; }
+.tok-fn { color: #1f5fbf; }
+.tok-flag { color: #8a5a00; }
+pre.code-sample .tok-kw { color: var(--accent); font-style: normal; font-weight: 600; }
+pre.code-sample .tok-var { color: #7a3fa0; font-weight: 600; }
+pre.code-sample .tok-str { color: #1f6b3a; }
+pre.code-sample .tok-comment { color: var(--ink-3); font-style: italic; }
+@media (prefers-color-scheme: dark) {
+  .tok-prop, pre.code-sample .tok-var { color: #d29bf5; }
+  .tok-num { color: #f0a35c; }
+  .tok-fn { color: #7fb0ff; }
+  .tok-flag { color: #e6b65c; }
+  pre.code-sample .tok-str { color: #7cc795; }
+}
+@media (max-width: 1100px) {
+  .editor > .stack > .panel:first-child { position: static; }
+  .preview-frame { height: 70vh; min-height: 480px; }
+}

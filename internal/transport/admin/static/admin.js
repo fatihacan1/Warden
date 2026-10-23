@@ -225,3 +225,106 @@ document.addEventListener("submit", function (e) {
     document.execCommand("insertText", false, chip.getAttribute("data-insert"));
   });
 })();
+
+// Syntax colors for read-only code samples (docs, integrate, webhooks).
+// Small on purpose: comments, strings, keywords, numbers, properties,
+// calls, shell flags and variables. The language comes from data-lang, the
+// sample's label, or a guess from the first line.
+(function () {
+  var blocks = document.querySelectorAll(".page pre:not(.code-hl):not(.env-preview):not([data-plain])");
+  if (!blocks.length) return;
+
+  var KW = {
+    js: "import|from|export|default|const|let|var|function|return|if|else|await|async|new|try|catch|throw|for|of|in|typeof|class|extends|null|undefined|true|false|this",
+    go: "package|import|func|return|if|else|err|nil|var|const|type|struct|range|for|go|defer|true|false",
+    py: "import|from|def|return|if|else|raise|try|except|with|as|None|True|False|class|for|in",
+    sh: "curl|export|echo|npm|npx|go|docker|grpcurl",
+    json: "true|false|null",
+  };
+
+  function esc(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function guess(text, label) {
+    var l = (label || "").toLowerCase();
+    if (/curl|shell|bash/.test(l)) return "sh";
+    if (/event|json/.test(l)) return "json";
+    if (/go\b/.test(l)) return "go";
+    if (/python/.test(l)) return "py";
+    if (/express|node|sdk|browser|react|js|ts/.test(l)) return "js";
+    var t = text.trimStart();
+    if (/^(curl|#|grpcurl|npm|docker|go run)/.test(t)) return "sh";
+    if (/^(POST|GET|PUT|PATCH|DELETE) \//.test(t)) return "http";
+    if (/^[{\[]/.test(t)) return "json";
+    if (/^(package|jwks, _ :=|jwks, err :=|import \(|token, err)/.test(t) || /:= /.test(t)) return "go";
+    if (/^(import jwt|def )/.test(t)) return "py";
+    return "js";
+  }
+
+  var RULES = [
+    ["tok-comment", /^(\/\/[^\n]*|#[^\n]*|\/\*[\s\S]*?\*\/)/],
+    ["tok-str", /^("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)/],
+    ["tok-var", /^\$[A-Za-z_][A-Za-z0-9_]*/],
+    ["tok-num", /^\b\d+(?:\.\d+)?\b/],
+    ["tok-flag", /^(?:--?[A-Za-z][\w-]*)/],
+    ["word", /^[A-Za-z_][\w]*/],
+  ];
+
+  function highlight(text, lang) {
+    var kw = new RegExp("^(?:" + (KW[lang] || KW.js) + ")$");
+    var out = "", i = 0, n = text.length, lineStart = true;
+    while (i < n) {
+      var rest = text.slice(i), m = null, cls = null;
+      if (lang === "http" && lineStart && (m = /^(POST|GET|PUT|PATCH|DELETE|HTTP\/1\.1)\b[^\n]*/.exec(rest))) {
+        out += '<span class="tok-kw">' + esc(m[1]) + "</span>" + esc(m[0].slice(m[1].length));
+        i += m[0].length; lineStart = false; continue;
+      }
+      if (lang === "http" && lineStart && (m = /^[A-Za-z][\w-]*(?=:)/.exec(rest))) {
+        out += '<span class="tok-prop">' + esc(m[0]) + "</span>"; i += m[0].length; lineStart = false; continue;
+      }
+      for (var r = 0; r < RULES.length; r++) {
+        m = RULES[r][1].exec(rest);
+        if (!m) continue;
+        cls = RULES[r][0];
+        // "#" starts a comment only in shell/python and at a word boundary.
+        if (cls === "tok-comment" && m[0][0] === "#" && !(lang === "sh" || lang === "py") ) { m = null; continue; }
+        if (cls === "tok-comment" && m[0][0] === "#" && i > 0 && /\S/.test(text[i - 1])) { m = null; continue; }
+        // "//" is a comment only in JS and Go, and never inside a URL ("https://").
+        if (cls === "tok-comment" && m[0][0] === "/" && m[0][1] === "/" && (!(lang === "js" || lang === "go") || (i > 0 && text[i - 1] === ":"))) { m = null; continue; }
+        if (cls === "tok-flag" && (lang !== "sh" || (i > 0 && /[\w-]/.test(text[i - 1])))) { m = null; continue; }
+        if (cls === "tok-var" && lang !== "sh") { m = null; continue; }
+        break;
+      }
+      if (!m) {
+        out += esc(text[i]);
+        lineStart = text[i] === "\n" ? true : lineStart && /\s/.test(text[i]);
+        i++;
+        continue;
+      }
+      var tok = m[0], after = text.slice(i + tok.length);
+      if (cls === "word") {
+        if (kw.test(tok)) cls = "tok-kw";
+        else if (/^\s*\(/.test(after)) cls = "tok-fn";
+        else if (/^\s*:(?!=)/.test(after) && lang !== "sh" && lang !== "py") cls = "tok-prop";
+        else cls = null;
+      } else if (cls === "tok-str" && lang === "json" && /^\s*:/.test(after)) {
+        cls = "tok-prop";
+      }
+      out += cls ? '<span class="' + cls + '">' + esc(tok) + "</span>" : esc(tok);
+      i += tok.length;
+      lineStart = false;
+    }
+    return out;
+  }
+
+  blocks.forEach(function (pre) {
+    var label = pre.querySelector(".code-label");
+    if (label) label.remove();
+    var text = pre.textContent;
+    var lang = pre.dataset.lang || guess(text, label && label.textContent);
+    pre.innerHTML = highlight(text, lang);
+    pre.classList.add("code-sample");
+    if (label) pre.insertBefore(label, pre.firstChild);
+  });
+})();

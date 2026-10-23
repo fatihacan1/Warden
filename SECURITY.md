@@ -4,7 +4,11 @@
 
 Please do not open a public issue for security problems. Report them privately through GitHub's [private vulnerability reporting](https://github.com/fatihacan1/warden/security/advisories/new) for this repository.
 
-Include the affected version or commit, a description of the issue and its impact, and steps to reproduce. You will receive an acknowledgement within 3 business days. Fixes are released as soon as practical, and reporters are credited unless they prefer otherwise.
+Include the affected version or commit, a description of the issue and its impact, and steps to reproduce. Reports are reviewed as maintainer availability permits. There is no guaranteed response time or commitment to provide a fix. Reporters are credited for released fixes unless they prefer otherwise.
+
+## Maintenance and support
+
+Warden is a community-driven project maintained on a voluntary basis. Development and security fixes depend on maintainer availability and community contributions. No dedicated support, service-level agreement, or ongoing maintenance is promised. The software is provided "as is", without warranty, under the [MIT License](LICENSE). Users are responsible for evaluating, deploying, and operating it for their own needs.
 
 ## Supported versions
 

@@ -1,0 +1,58 @@
+{{define "content"}}{{$csrf := .CSRF}}{{with .Data}}{{$k := .Key}}
+<p class="crumb"><a href="/admin/api-keys">API keys</a></p>
+<div class="head">
+  <div>
+    <h1>{{$k.Name}}</h1>
+    <p class="lede row">
+      {{if eq $k.Kind "secret"}}<span class="tag tag-accent">Secret key</span>{{else}}<span class="tag">Publishable key</span>{{end}}
+      {{if not $k.Active}}<span class="tag tag-err">Revoked {{date $k.RevokedAt}}</span>{{end}}
+      <span class="muted small">Created {{date $k.CreatedAt}} · last used {{if $k.LastUsedAt}}{{ago (deref $k.LastUsedAt)}}{{else}}never{{end}}</span>
+    </p>
+  </div>
+</div>
+
+<div class="grid grid-main">
+  <section class="panel">
+    <header><h2>Settings</h2></header>
+    {{if $k.Active}}
+    <form method="post" action="/admin/api-keys/{{$k.ID}}" class="panel-body">
+      <input type="hidden" name="_csrf" value="{{$csrf}}">
+      <div class="field">
+        <label for="name">Name</label>
+        <input id="name" name="name" type="text" value="{{$k.Name}}" maxlength="80" required>
+      </div>
+      {{if eq $k.Kind "publishable"}}
+      <div class="field">
+        <label for="origins">Allowed origins</label>
+        <textarea id="origins" name="origins" spellcheck="false" rows="6" placeholder="https://app.example.com&#10;http://localhost:3000">{{join $k.AllowedOrigins "\n"}}</textarea>
+        <p class="help">One per line. Browsers on other origins get <code>origin_not_allowed</code>; these origins are also allowed by CORS. Empty means any origin, which mobile apps need.</p>
+      </div>
+      {{end}}
+      <button class="btn btn-primary" type="submit">Save</button>
+    </form>
+    {{else}}
+    <p class="panel-body muted mb-0">Revoked keys cannot be changed.</p>
+    {{end}}
+  </section>
+
+  <div class="stack">
+    <section class="panel">
+      <header><h2>Key</h2></header>
+      <div class="panel-body">
+        <div class="copy"><code>{{$k.Hint}}</code>{{if eq $k.Kind "publishable"}}<button type="button" class="btn btn-small" data-copy="{{$k.Hint}}">Copy</button>{{end}}</div>
+        {{if eq $k.Kind "secret"}}<p class="help mb-0">Only the start and end are shown: Warden keeps a hash, not the key. Lost it? Create a new key and revoke this one.</p>{{end}}
+      </div>
+    </section>
+    {{if $k.Active}}
+    <section class="panel danger-zone">
+      <header><h2>Revoke</h2></header>
+      <form method="post" action="/admin/api-keys/{{$k.ID}}/revoke" class="panel-body" data-confirm="Revoke {{$k.Name}}? Apps or services using it stop working immediately.">
+        <input type="hidden" name="_csrf" value="{{$csrf}}">
+        <p class="help">Requests with this key are rejected on every replica within 15 seconds. This cannot be undone.</p>
+        <button class="btn btn-danger" type="submit">Revoke key</button>
+      </form>
+    </section>
+    {{end}}
+  </div>
+</div>
+{{end}}{{end}}
