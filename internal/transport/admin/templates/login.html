@@ -2,7 +2,7 @@
 <img class="login-mark" src="/admin/static/mark.svg" alt="" width="40" height="40">
 <h1>Warden admin</h1>
 <p class="lede login-lede">Sign in with the <code>ADMIN_TOKEN</code> from this instance's environment.</p>
-{{with .Data}}{{if .Error}}<p class="notice notice-err" role="alert">{{.Error}}</p>{{end}}{{end}}
+{{with .Data}}{{if .Expired}}<p class="notice notice-err" role="status">You were signed out after a period of inactivity.</p>{{end}}{{if .Error}}<p class="notice notice-err" role="alert">{{.Error}}</p>{{end}}{{end}}
 <form method="post" action="/admin/login">
   <div class="field">
     <label for="token">Admin token</label>

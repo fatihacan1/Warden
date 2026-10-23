@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/fatihacan1/warden/internal/accesstokens"
 	"github.com/fatihacan1/warden/internal/apikeys"
 	"github.com/fatihacan1/warden/internal/auth"
 	"github.com/fatihacan1/warden/internal/config"
@@ -65,6 +66,8 @@ type Deps struct {
 	Mail     *mailer.Library
 	Renderer *mailer.Renderer
 	Sender   mailer.Sender
+
+	AccessTokens *accesstokens.Manager
 }
 
 type Server struct {
@@ -164,6 +167,8 @@ func (s *Server) routes() {
 		return
 	}
 	a.Use("/admin", s.ipAllowlist)
+	a.Use("/api", s.ipAllowlist)
+	s.apiRoutes(a.Group("/api/v1", s.apiAuth))
 	a.Get("/", func(c fiber.Ctx) error { return c.Redirect().To("/admin") })
 	a.Get("/admin/login", s.loginPage)
 	a.Post("/admin/login", s.originCheck, s.login)
@@ -211,6 +216,10 @@ func (s *Server) routes() {
 	g.Get("/emails/:name/preview", s.previewEmail)
 	g.Post("/emails/:name/preview", s.originCheck, s.csrf, s.previewEmail)
 	g.Post("/emails/:name/test", s.originCheck, s.csrf, s.testEmail)
+
+	g.Get("/access-tokens", s.accessTokensPage)
+	g.Post("/access-tokens", s.originCheck, s.csrf, s.createAccessToken)
+	g.Post("/access-tokens/:id/revoke", s.originCheck, s.csrf, s.revokeAccessToken)
 
 	g.Get("/docs", s.docsPage)
 	g.Get("/openapi.yaml", s.openAPI)
@@ -268,8 +277,20 @@ var funcs = template.FuncMap{
 		l := i18n.Lookup(code)
 		return template.HTML(`<img class="flag" src="/admin/static/flags/` + l.Code + `.svg" alt="" width="18" height="12">`) // #nosec G203 -- fixed list of codes
 	},
-	"langName": func(code string) string { return i18n.Lookup(code).Name },
-	"device":   auth.DescribeDevice,
+	"langName":  func(code string) string { return i18n.Lookup(code).Name },
+	"device":    auth.DescribeDevice,
+	"hasSuffix": strings.HasSuffix,
+	"until": func(t time.Time) string {
+		d := time.Until(t)
+		switch {
+		case d < time.Hour:
+			return "in " + strconv.Itoa(max(1, int(d.Minutes()))) + "m"
+		case d < 48*time.Hour:
+			return "in " + strconv.Itoa(int(d.Hours())) + "h"
+		default:
+			return "in " + strconv.Itoa(int(d.Hours()/24)) + "d"
+		}
+	},
 }
 
 // providerIcon inlines a provider's brand mark (Simple Icons, CC0) so it can
@@ -340,6 +361,7 @@ var flashes = map[string]string{
 	"rotated":        "Signing key rotated. Previous key stays published until its tokens expire.",
 	"signedout":      "Signed out.",
 	"keysaved":       "API key updated.",
+	"tokenrevoked":   "Access token revoked. Requests with it are rejected immediately.",
 	"keyrevoked":     "API key revoked. Requests using it are rejected immediately.",
 	"webhooktest":    "Test event queued. It appears in the deliveries below within a few seconds.",
 	"webhookdeleted": "Webhook deleted.",
@@ -377,6 +399,10 @@ type adminSession struct {
 	// TokenFP binds the session to the admin token: rotating ADMIN_TOKEN
 	// immediately invalidates every existing admin session.
 	TokenFP string `json:"tfp"`
+	// Seen is the last request, for the idle timeout.
+	Seen time.Time `json:"seen"`
+	// IP the session was created from; recorded in the audit log.
+	IP string `json:"ip"`
 }
 
 func (s *Server) tokenFingerprint() string { return randtoken.HashHex(string(s.tokenHash[:]))[:16] }
@@ -395,6 +421,19 @@ func (s *Server) requireSession(c fiber.Ctx) error {
 	var sess adminSession
 	if json.Unmarshal(b, &sess) != nil || subtle.ConstantTimeCompare([]byte(sess.TokenFP), []byte(s.tokenFingerprint())) != 1 {
 		return c.Redirect().To("/admin/login")
+	}
+	// Idle timeout: a session left open on a shared or stolen machine ends on
+	// its own. Absolute lifetime is the Redis TTL set at login.
+	now := time.Now()
+	if !sess.Seen.IsZero() && now.Sub(sess.Seen) > s.Config.Admin.SessionIdle {
+		s.Redis.Del(c.Context(), sessionKey(raw))
+		return c.Redirect().To("/admin/login?expired=1")
+	}
+	if now.Sub(sess.Seen) > time.Minute {
+		sess.Seen = now
+		if nb, err := json.Marshal(sess); err == nil {
+			s.Redis.SetArgs(c.Context(), sessionKey(raw), nb, redis.SetArgs{KeepTTL: true})
+		}
 	}
 	c.Locals("admin_session", &sess)
 	return c.Next()
@@ -427,7 +466,7 @@ func (s *Server) csrf(c fiber.Ctx) error {
 }
 
 func (s *Server) loginPage(c fiber.Ctx) error {
-	return s.render(c, fiber.StatusOK, "login", "", "Sign in", nil)
+	return s.render(c, fiber.StatusOK, "login", "", "Sign in", map[string]any{"Expired": c.Query("expired") == "1"})
 }
 
 func (s *Server) login(c fiber.Ctx) error {
@@ -441,7 +480,7 @@ func (s *Server) login(c fiber.Ctx) error {
 		return s.render(c, fiber.StatusUnauthorized, "login", "", "Sign in", map[string]string{"Error": "That token is not valid."})
 	}
 	raw := randtoken.New(32)
-	sess := adminSession{CSRF: randtoken.New(32), Created: time.Now(), TokenFP: s.tokenFingerprint()}
+	sess := adminSession{CSRF: randtoken.New(32), Created: time.Now(), TokenFP: s.tokenFingerprint(), Seen: time.Now(), IP: c.IP()}
 	b, _ := json.Marshal(sess)
 	if err := s.Redis.Set(c.Context(), sessionKey(raw), b, s.Config.Admin.SessionTTL).Err(); err != nil {
 		return err

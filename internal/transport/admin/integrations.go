@@ -15,6 +15,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/fatihacan1/warden/api"
+	"github.com/fatihacan1/warden/internal/accesstokens"
 	"github.com/fatihacan1/warden/internal/apikeys"
 	"github.com/fatihacan1/warden/internal/crypto/randtoken"
 	"github.com/fatihacan1/warden/internal/domain"
@@ -481,7 +482,7 @@ func (s *Server) docsPage(c fiber.Ctx) error {
 	return s.render(c, fiber.StatusOK, "docs", "docs", "API docs", map[string]any{
 		"PublicURL": cfg.HTTP.PublicURL, "Issuer": cfg.Token.Issuer, "Audience": strings.Join(cfg.Token.Audience, ","),
 		"JWKS": cfg.HTTP.PublicURL + "/.well-known/jwks.json", "PK": pk, "GraphQL": cfg.GraphQL.Enabled,
-		"Reference": s.reference,
+		"Reference": s.reference, "AdminURL": s.adminURL(c),
 	})
 }
 
@@ -491,4 +492,53 @@ func (s *Server) openAPI(c fiber.Ctx) error {
 		c.Set(fiber.HeaderContentDisposition, `attachment; filename="warden-openapi.yaml"`)
 	}
 	return c.Send(api.OpenAPI)
+}
+
+// ---------------------------------------------------------------------------
+// Access tokens (admin API, AI agents)
+
+func (s *Server) accessTokensPage(c fiber.Ctx) error {
+	list, err := s.AccessTokens.List(c.Context())
+	if err != nil {
+		return err
+	}
+	return s.render(c, fiber.StatusOK, "accesstokens", "tokens", "Access tokens", map[string]any{
+		"Tokens": list, "Resources": accesstokens.Resources, "Durations": accesstokens.Durations, "Reveal": s.unstash(c),
+		"Now": time.Now(), "AdminURL": s.adminURL(c), "MyIP": c.IP(),
+	})
+}
+
+// adminURL is how this admin server was reached, for copy-paste snippets.
+func (s *Server) adminURL(c fiber.Ctx) string {
+	return c.Scheme() + "://" + string(c.Request().Host())
+}
+
+func (s *Server) createAccessToken(c fiber.Ctx) error {
+	scopes := map[string]string{}
+	for _, r := range accesstokens.Resources {
+		if v := c.FormValue("scope_" + r.Key); v != "" {
+			scopes[r.Key] = v
+		}
+	}
+	raw, t, err := s.AccessTokens.Create(c.Context(), accesstokens.Input{
+		Name: c.FormValue("name"), Duration: c.FormValue("duration"), Scopes: scopes,
+		AllowedIPs: lines(c.FormValue("allowed_ips")), CreatedBy: c.IP(),
+	})
+	if err != nil {
+		return backErr(c, "/admin/access-tokens", err)
+	}
+	s.audit(c, "admin.access_token_created", map[string]any{"token_id": t.ID, "name": t.Name, "scopes": t.ScopeList(), "expires_at": t.ExpiresAt})
+	return s.reveal(c, "/admin/access-tokens", map[string]string{"Value": raw, "Name": t.Name})
+}
+
+func (s *Server) revokeAccessToken(c fiber.Ctx) error {
+	id, err := parseUserID(c)
+	if err != nil {
+		return err
+	}
+	if err := s.AccessTokens.Revoke(c.Context(), id); err != nil {
+		return backErr(c, "/admin/access-tokens", err)
+	}
+	s.audit(c, "admin.access_token_revoked", map[string]any{"token_id": id})
+	return back(c, "/admin/access-tokens", "tokenrevoked")
 }

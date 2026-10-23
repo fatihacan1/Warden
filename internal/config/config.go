@@ -83,6 +83,8 @@ type AdminConfig struct {
 	// Token enables the admin UI. Leave empty to disable the UI entirely.
 	Token      string        `env:"TOKEN"`
 	SessionTTL time.Duration `env:"SESSION_TTL" envDefault:"8h"`
+	// SessionIdle signs an admin out after this long without a request.
+	SessionIdle time.Duration `env:"SESSION_IDLE" envDefault:"30m"`
 	// CookieSecure: "true", "false" or empty (= true only in production).
 	CookieSecure string `env:"COOKIE_SECURE"`
 	// AllowedIPs restricts the admin UI to these IPs or CIDR ranges. Editable
@@ -512,6 +514,7 @@ func (c *Config) Validate() error {
 		{"HTTP_WRITE_TIMEOUT", c.HTTP.WriteTimeout, time.Second, 5 * time.Minute},
 		{"HTTP_IDLE_TIMEOUT", c.HTTP.IdleTimeout, time.Second, time.Hour},
 		{"ADMIN_SESSION_TTL", c.Admin.SessionTTL, 5 * time.Minute, 7 * 24 * time.Hour},
+		{"ADMIN_SESSION_IDLE", c.Admin.SessionIdle, time.Minute, 24 * time.Hour},
 		{"DATABASE_STATEMENT_TIMEOUT", c.Database.StatementTimeout, 100 * time.Millisecond, 5 * time.Minute},
 		{"S3_PRESIGN_TTL", c.S3.PresignTTL, time.Minute, 7 * 24 * time.Hour},
 		{"AUTH_EMAIL_VERIFICATION_TTL", c.Auth.EmailVerificationTTL, 5 * time.Minute, 7 * 24 * time.Hour},

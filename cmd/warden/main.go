@@ -5,6 +5,7 @@
 //	warden migrate          apply database migrations and exit
 //	warden migrate status   show migration status
 //	warden reencrypt        re-encrypt stored secrets with the current ENCRYPTION_KEY
+//	warden mcp              MCP server (stdio) for AI agents, using an access token
 //	warden keygen           print fresh random secrets for .env
 //	warden healthcheck      exit 0 if the local HTTP server is healthy (Docker HEALTHCHECK)
 //	warden version          print the version
@@ -26,6 +27,7 @@ import (
 
 	"github.com/fatihacan1/warden/internal/app"
 	"github.com/fatihacan1/warden/internal/config"
+	"github.com/fatihacan1/warden/internal/mcp"
 	"github.com/fatihacan1/warden/internal/observability"
 	"github.com/fatihacan1/warden/internal/platform/postgres"
 	"github.com/fatihacan1/warden/internal/setup"
@@ -46,6 +48,13 @@ func main() {
 		migrate(len(os.Args) > 2 && os.Args[2] == "status")
 	case "reencrypt":
 		reencrypt()
+	case "mcp":
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		if err := mcp.Serve(ctx, os.Stdin, os.Stdout, mcp.FromEnv(observability.Version)); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	case "keygen":
 		keygen()
 	case "healthcheck":
@@ -53,7 +62,7 @@ func main() {
 	case "version", "--version", "-v":
 		fmt.Println(observability.Version)
 	case "help", "--help", "-h":
-		fmt.Println("usage: warden [serve|setup|migrate [status]|reencrypt|keygen|healthcheck|version]")
+		fmt.Println("usage: warden [serve|setup|migrate [status]|reencrypt|mcp|keygen|healthcheck|version]")
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
 		os.Exit(2)

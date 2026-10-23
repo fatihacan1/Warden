@@ -419,6 +419,26 @@ Branch on `code`, show `message` to users if you like (it never reveals whether 
 | `rate_limited` | 429 | Respect `Retry-After` |
 | `server_busy`, `service_unavailable` | 503 | Retry after `Retry-After` with backoff |
 
+## Admin API and AI agents
+
+Create an access token on the admin UI's **Access tokens** page. Choose read or write per resource (users, email templates, settings, webhooks, API keys, providers, audit log, statistics), a lifetime from 1 hour to 90 days, and optionally the IP ranges it may be used from. The token is shown once.
+
+The admin API lives on the admin port under `/api/v1` and takes `Authorization: Bearer wat_...`. The admin UI's **API docs** page lists every endpoint with the permission it needs. Examples:
+
+```bash
+curl http://localhost:9090/api/v1/users?q=ada -H "Authorization: Bearer $WARDEN_ACCESS_TOKEN"
+curl -X PATCH http://localhost:9090/api/v1/users/$ID -H "Authorization: Bearer $WARDEN_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" -d '{"roles":["admin"]}'
+```
+
+For Claude and other MCP clients, Warden includes an MCP server that turns the API into tools (list users, edit an email template, create a webhook, ...), offering only those the token allows:
+
+```bash
+claude mcp add warden -e WARDEN_ADMIN_URL=http://localhost:9090 -e WARDEN_ACCESS_TOKEN=wat_... -- warden mcp
+```
+
+Guarantees: tokens always expire, are stored as hashes and checked on every request (revocation is immediate), cannot create other tokens or change the admin IP allowlist, are refused on requests from browsers, are limited to 300 requests per minute, and every change they make is in the audit log with the token's name.
+
 ## Languages and security emails
 
 Every email goes out in the user's language. Built in: English (`en`) and Turkish (`tr`). A user's language is, in order:

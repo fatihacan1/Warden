@@ -1,0 +1,134 @@
+{{define "content"}}{{$csrf := .CSRF}}{{with .Data}}{{$now := .Now}}
+<div class="head">
+  <div>
+    <h1>Access tokens</h1>
+    <p class="lede">Let scripts and AI agents such as Claude manage this instance through the admin API, with only the permissions you grant and for a limited time.</p>
+  </div>
+</div>
+
+{{with .Reveal}}
+<section class="panel reveal" aria-live="polite">
+  <div class="panel-body">
+    <h2>Copy “{{.Name}}” now</h2>
+    <p>This is the only time the token is shown. Give it to the tool that needs it; do not commit it or paste it into chats you share.</p>
+    <div class="copy"><code>{{.Value}}</code><button type="button" class="btn btn-small" data-copy="{{.Value}}">Copy</button></div>
+  </div>
+</section>
+{{end}}
+
+<div class="grid grid-tokens">
+  <div class="stack">
+    <section class="panel">
+      <header><h2>Tokens</h2></header>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Permissions</th><th>Expires</th><th class="hide-sm">Last used</th><th><span class="sr-only">Actions</span></th></tr></thead>
+          <tbody>
+          {{range .Tokens}}{{$st := .Status $now}}
+            <tr>
+              <td><strong>{{.Name}}</strong><br><span class="muted small mono">{{.Hint}}</span>{{if .AllowedIPs}}<br><span class="muted small">Only from {{join .AllowedIPs ", "}}</span>{{end}}</td>
+              <td><div class="chips">{{range .ScopeList}}<span class="tag {{if hasSuffix . ":write"}}tag-accent{{end}}">{{.}}</span>{{end}}</div></td>
+              <td class="num">{{if eq $st "revoked"}}<span class="tag tag-err">Revoked</span>{{else if eq $st "expired"}}<span class="tag">Expired</span>{{else}}<span title="{{date .ExpiresAt}}">{{until .ExpiresAt}}</span>{{end}}</td>
+              <td class="hide-sm num">{{if .LastUsedAt}}{{ago (deref .LastUsedAt)}}<br><span class="muted small mono">{{.LastUsedIP}}</span>{{else}}<span class="muted">Never</span>{{end}}</td>
+              <td class="cell-action">
+                {{if eq $st "active"}}
+                <form method="post" action="/admin/access-tokens/{{.ID}}/revoke" class="inline-form" data-confirm="Revoke {{.Name}}? Anything using it stops working immediately.">
+                  <input type="hidden" name="_csrf" value="{{$csrf}}">
+                  <button class="btn btn-small btn-danger" type="submit">Revoke</button>
+                </form>
+                {{end}}
+              </td>
+            </tr>
+          {{else}}
+            <tr><td colspan="5" class="muted">No tokens yet.</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header><h2>Use it with Claude</h2></header>
+      <div class="panel-body prose">
+        <p>Warden ships an MCP server, so Claude Code, Claude Desktop and other MCP clients get tools like <em>list users</em>, <em>edit email template</em> or <em>create webhook</em>, limited to this token's permissions. Claude Code:</p>
+<pre>claude mcp add warden \
+  -e WARDEN_ADMIN_URL={{.AdminURL}} \
+  -e WARDEN_ACCESS_TOKEN=wat_... \
+  -- warden mcp</pre>
+        <p class="help">Needs the <code>warden</code> binary on that machine: <code>go install github.com/fatihacan1/warden/cmd/warden@latest</code>, or run it from the image with <code>docker run -i --rm --network host -e WARDEN_ADMIN_URL -e WARDEN_ACCESS_TOKEN warden mcp</code>. The admin port must be reachable from there (locally, over a VPN or an SSH tunnel).</p>
+        <p>Claude Desktop (<code>claude_desktop_config.json</code>):</p>
+<pre>{
+  "mcpServers": {
+    "warden": {
+      "command": "warden",
+      "args": ["mcp"],
+      "env": { "WARDEN_ADMIN_URL": "{{.AdminURL}}", "WARDEN_ACCESS_TOKEN": "wat_..." }
+    }
+  }
+}</pre>
+        <p>Any other tool can call the API directly:</p>
+<pre>curl {{.AdminURL}}/api/v1/email-templates/verify_email?lang=en \
+  -H "Authorization: Bearer $WARDEN_ACCESS_TOKEN"</pre>
+        <p class="mb-0">All endpoints are listed under <a href="/admin/docs#admin-api">API docs</a>.</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header><h2>How tokens are protected</h2></header>
+      <div class="panel-body prose">
+        <ul class="plain-list">
+          <li>Every token expires. The longest is 90 days; there is no “never”.</li>
+          <li>Permissions are per resource and start empty. Read never includes write.</li>
+          <li>Only a SHA-256 hash is stored. Each request is checked against the database, so revoking works at once on every replica.</li>
+          <li>The admin API listens on this private port only, behind the same IP allowlist as this UI, and refuses browser requests.</li>
+          <li>A token cannot create tokens or change admin access, so a leaked one cannot escalate or lock you out.</li>
+          <li>300 requests per minute per token, and every change is in the audit log with the token's name.</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <header><h2>Create a token</h2></header>
+    <form method="post" action="/admin/access-tokens" class="panel-body">
+      <input type="hidden" name="_csrf" value="{{$csrf}}">
+      <div class="field">
+        <label for="t-name">Name</label>
+        <input id="t-name" name="name" type="text" placeholder="Claude: email templates" required maxlength="80">
+        <p class="help">Who or what uses it. Shown in the audit log.</p>
+      </div>
+      <fieldset class="field">
+        <legend>Valid for</legend>
+        <div class="seg">
+          {{range $i, $d := .Durations}}
+          <label><input type="radio" name="duration" value="{{$d.Key}}" {{if eq $d.Key "1d"}}checked{{end}}><span>{{$d.Label}}</span></label>
+          {{end}}
+        </div>
+      </fieldset>
+      <fieldset class="field">
+        <legend>Permissions</legend>
+        <div class="perm-table">
+          {{range .Resources}}
+          <div class="perm-row">
+            <div class="perm-name"><strong>{{.Title}}</strong>
+              <p class="help">{{if .Read}}<span class="perm-level">Read:</span> {{.Read}}.{{end}}{{if .Write}}<br><span class="perm-level">Write:</span> {{.Write}}.{{end}}</p>
+            </div>
+            <div class="seg seg-small" role="radiogroup" aria-label="{{.Title}}">
+              <label><input type="radio" name="scope_{{.Key}}" value="" checked><span>None</span></label>
+              {{if .Read}}<label><input type="radio" name="scope_{{.Key}}" value="read"><span>Read</span></label>{{end}}
+              {{if .Write}}<label><input type="radio" name="scope_{{.Key}}" value="write"><span>Write</span></label>{{end}}
+            </div>
+          </div>
+          {{end}}
+        </div>
+      </fieldset>
+      <div class="field">
+        <label for="t-ips">Only from these addresses <span class="muted">(optional)</span></label>
+        <textarea id="t-ips" name="allowed_ips" spellcheck="false" rows="3" placeholder="{{.MyIP}}&#10;10.0.0.0/8"></textarea>
+        <p class="help">One IP or CIDR range per line. Your address is <code>{{.MyIP}}</code>.</p>
+      </div>
+      <button class="btn btn-primary" type="submit">Create token</button>
+    </form>
+  </section>
+</div>
+{{end}}{{end}}

@@ -158,6 +158,8 @@ Set `SENTRY_DSN` to receive panics and unexpected errors.
 
 The same steps switch `ENCRYPTION_ALGORITHM` between `aes-256-gcm` and `xchacha20-poly1305`.
 
+**Access tokens for automation and AI agents** (Developers > Access tokens) reach the admin API on the private admin port. Grant the least you can (read before write, one resource at a time), pick the shortest lifetime that works, pin long-lived ones to the IP of the machine that uses them, and revoke them when the job is done. Their use is in the audit log as `api.*` events with the token's name. An MCP client such as Claude runs `warden mcp` on a machine that can reach the admin port (VPN or SSH tunnel), never through the public internet in plain HTTP.
+
 **Revoke an API key** on the API keys page. Publishable and secret keys stop working on every replica within 15 seconds. Use one key per app or service so a leak only needs one revocation.
 
 **Data retention**: expired sessions and delivered outbox events are deleted after 7 days, audit events after `AUTH_AUDIT_RETENTION` (90 days). Account deletion (`DELETE /v1/me`) removes the user, sessions, identities and avatar; audit entries keep only the user id.

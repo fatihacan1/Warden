@@ -188,8 +188,62 @@ app.post("/webhooks/warden",
 <p class="muted">GraphQL is off. Set <code>GRAPHQL_ENABLED=true</code> and restart to serve <code>POST /graphql</code>.</p>
 {{end}}
 
+<h2 id="admin-api" class="doc-h">Admin API for automation and AI agents</h2>
+<p>Everything you do in this admin UI can be scripted, or handed to an AI agent, with an <a href="/admin/access-tokens">access token</a>: scoped per resource, expiring after at most 90 days, optionally pinned to IP ranges. It is served on this private admin port, not on the public API.</p>
+<div class="code-pair">
+<pre><span class="code-label">curl</span>curl {{.AdminURL}}/api/v1/email-templates/verify_email?lang=tr \
+  -H "Authorization: Bearer $WARDEN_ACCESS_TOKEN"
+
+# Change only the subject; HTML and text keep their value
+curl -X PUT "{{.AdminURL}}/api/v1/email-templates/verify_email?lang=tr" \
+  -H "Authorization: Bearer $WARDEN_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"subject":"{{"{{"}}.AppName{{"}}"}}: E-postanızı doğrulayın"}'</pre>
+<pre><span class="code-label">Claude Code (MCP)</span>claude mcp add warden \
+  -e WARDEN_ADMIN_URL={{.AdminURL}} \
+  -e WARDEN_ACCESS_TOKEN=wat_... \
+  -- warden mcp
+
+# Then ask: "Make the Turkish password reset email
+# friendlier and preview it before saving."</pre>
+</div>
+<section class="panel ref-group">
+  <header><h3 class="mb-0">Endpoints</h3><span class="muted small">Errors: {"error": {"code", "message"}} · 300 requests/minute per token</span></header>
+  <div class="table-wrap">
+    <table class="ref">
+      <tbody>
+        <tr><td class="ref-method"><span class="method method-GET">GET</span></td><td><code class="break">/api/v1/token</code><br><span class="small">This token's name, permissions, expiry</span></td><td class="small mono">any</td></tr>
+        <tr><td class="ref-method"><span class="method method-GET">GET</span></td><td><code class="break">/api/v1/stats</code><br><span class="small">User counts, sessions, delivery queue</span></td><td class="small mono">stats:read</td></tr>
+        <tr><td class="ref-method"><span class="method method-GET">GET</span></td><td><code class="break">/api/v1/users?q=&page=&per_page=</code><br><span class="small">List and search users</span></td><td class="small mono">users:read</td></tr>
+        <tr><td class="ref-method"><span class="method method-GET">GET</span></td><td><code class="break">/api/v1/users/{id}</code><br><span class="small">User with sessions, linked accounts, security log</span></td><td class="small mono">users:read</td></tr>
+        <tr><td class="ref-method"><span class="method method-POST">POST</span></td><td><code class="break">/api/v1/users</code><br><span class="small">Create a user</span></td><td class="small mono">users:write</td></tr>
+        <tr><td class="ref-method"><span class="method method-PATCH">PATCH</span></td><td><code class="break">/api/v1/users/{id}</code><br><span class="small">Name, roles, locale, disabled</span></td><td class="small mono">users:write</td></tr>
+        <tr><td class="ref-method"><span class="method method-DELETE">DELETE</span></td><td><code class="break">/api/v1/users/{id}/sessions</code><br><span class="small">Sign out everywhere</span></td><td class="small mono">users:write</td></tr>
+        <tr><td class="ref-method"><span class="method method-GET">GET</span></td><td><code class="break">/api/v1/settings</code><br><span class="small">Feature toggles and policies</span></td><td class="small mono">settings:read</td></tr>
+        <tr><td class="ref-method"><span class="method method-PATCH">PATCH</span></td><td><code class="break">/api/v1/settings</code><br><span class="small">Change some settings (admin access excluded)</span></td><td class="small mono">settings:write</td></tr>
+        <tr><td class="ref-method"><span class="method method-GET">GET</span></td><td><code class="break">/api/v1/email-templates</code><br><span class="small">Templates, variables, customized languages</span></td><td class="small mono">email_templates:read</td></tr>
+        <tr><td class="ref-method"><span class="method method-GET">GET</span></td><td><code class="break">/api/v1/email-templates/{name}?lang=</code><br><span class="small">Subject, HTML, text, variables, sample data</span></td><td class="small mono">email_templates:read</td></tr>
+        <tr><td class="ref-method"><span class="method method-POST">POST</span></td><td><code class="break">/api/v1/email-templates/{name}/preview?lang=</code><br><span class="small">Render without saving</span></td><td class="small mono">email_templates:read</td></tr>
+        <tr><td class="ref-method"><span class="method method-PUT">PUT</span></td><td><code class="break">/api/v1/email-templates/{name}?lang=</code><br><span class="small">Save; omitted fields keep their value</span></td><td class="small mono">email_templates:write</td></tr>
+        <tr><td class="ref-method"><span class="method method-DELETE">DELETE</span></td><td><code class="break">/api/v1/email-templates/{name}?lang=</code><br><span class="small">Back to the built-in version</span></td><td class="small mono">email_templates:write</td></tr>
+        <tr><td class="ref-method"><span class="method method-GET">GET</span></td><td><code class="break">/api/v1/webhooks</code><br><span class="small">Endpoints and event types</span></td><td class="small mono">webhooks:read</td></tr>
+        <tr><td class="ref-method"><span class="method method-GET">GET</span></td><td><code class="break">/api/v1/webhooks/{id}/deliveries</code><br><span class="small">Recent deliveries</span></td><td class="small mono">webhooks:read</td></tr>
+        <tr><td class="ref-method"><span class="method method-POST">POST</span></td><td><code class="break">/api/v1/webhooks</code><br><span class="small">Create; returns the secret once</span></td><td class="small mono">webhooks:write</td></tr>
+        <tr><td class="ref-method"><span class="method method-PATCH">PATCH</span></td><td><code class="break">/api/v1/webhooks/{id}</code><br><span class="small">Change</span></td><td class="small mono">webhooks:write</td></tr>
+        <tr><td class="ref-method"><span class="method method-DELETE">DELETE</span></td><td><code class="break">/api/v1/webhooks/{id}</code><br><span class="small">Delete</span></td><td class="small mono">webhooks:write</td></tr>
+        <tr><td class="ref-method"><span class="method method-POST">POST</span></td><td><code class="break">/api/v1/webhooks/{id}/test</code><br><span class="small">Send a test event</span></td><td class="small mono">webhooks:write</td></tr>
+        <tr><td class="ref-method"><span class="method method-GET">GET</span></td><td><code class="break">/api/v1/api-keys</code><br><span class="small">Keys without values</span></td><td class="small mono">api_keys:read</td></tr>
+        <tr><td class="ref-method"><span class="method method-POST">POST</span></td><td><code class="break">/api/v1/api-keys</code><br><span class="small">Create; returns the value once</span></td><td class="small mono">api_keys:write</td></tr>
+        <tr><td class="ref-method"><span class="method method-DELETE">DELETE</span></td><td><code class="break">/api/v1/api-keys/{id}</code><br><span class="small">Revoke</span></td><td class="small mono">api_keys:write</td></tr>
+        <tr><td class="ref-method"><span class="method method-GET">GET</span></td><td><code class="break">/api/v1/providers</code><br><span class="small">Providers and callback URLs, no secrets</span></td><td class="small mono">providers:read</td></tr>
+        <tr><td class="ref-method"><span class="method method-GET">GET</span></td><td><code class="break">/api/v1/audit?user_id=&limit=</code><br><span class="small">Audit log</span></td><td class="small mono">audit:read</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
 <h2 id="reference" class="doc-h">Endpoint reference</h2>
-<p>Generated from the OpenAPI document shipped with this build. Import it into Postman, Insomnia or an OpenAPI code generator for clients in other languages.</p>
+<p>The public API, generated from the OpenAPI document shipped with this build. Import it into Postman, Insomnia or an OpenAPI code generator for clients in other languages.</p>
 {{range .Reference}}
 <section class="panel ref-group">
   <header><h3 class="mb-0">{{.Tag}}</h3>{{if .Description}}<span class="muted small">{{.Description}}</span>{{end}}</header>

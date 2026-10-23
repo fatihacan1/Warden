@@ -49,6 +49,7 @@ Warden issues short-lived **ES256 JWT access tokens** that your services verify 
 - Webhooks for `user.created`, `user.updated` and every other event, signed per [Standard Webhooks](https://www.standardwebhooks.com), retried per endpoint
 - Optional GraphQL endpoint with depth, size and introspection limits
 - API docs inside the admin UI with working examples for your instance, and the OpenAPI file to download
+- Access tokens for automation and AI agents: per-resource read/write permissions, 1 hour to 90 days, optional IP ranges, plus a built-in MCP server (`warden mcp`) so Claude can manage users, email templates, webhooks and settings within those limits
 
 **Operations**
 - Setup wizard (`warden setup`): a step-by-step onboarding that tests database, Redis, SMTP, S3 and RabbitMQ before moving on, generates secrets, picks the encryption algorithm and writes `.env`
@@ -154,6 +155,7 @@ The admin UI is how you configure an instance: switch features and providers on 
 - **Emails**: every email and the shared layout, per language. Subject, HTML and plain text are edited in code editors with line numbers, HTML and template highlighting and click-to-insert variables; a sandboxed preview renders sample data, and you can send yourself a test. Broken templates are rejected before they are saved.
 - **API docs**: working examples (create the first user, sign in, update the profile, upload a photo, check a role, webhooks, GraphQL) with this instance's values, and the endpoint reference generated from the OpenAPI file, which you can download.
 - **API keys**: publishable keys for apps (bound to origins) and secret keys for backends; secrets are shown once.
+- **Access tokens**: scoped, expiring tokens for the admin API and the MCP server (Claude Code, Claude Desktop). Tokens cannot create tokens or change admin access.
 - **Webhooks**: endpoints, event selection, signing secrets, recent deliveries with retry.
 - **Signing keys**: current key, rotation schedule, rotate now.
 - **Integrate**: issuer, audience, JWKS URL and copy-paste verification snippets for this instance.
@@ -289,7 +291,8 @@ Configuration is validated at startup. Unsafe combinations are rejected with a c
 | CSRF on cookie mode | Refresh cookie only honored with the `X-Auth-Mode: cookie` header; JSON-only bodies |
 | Malicious avatar uploads | Size and pixel limits (decompression bombs), decoded and re-encoded as JPEG (strips EXIF and polyglots) |
 | Secrets at rest | AES-256-GCM with per-record associated data for signing keys, TOTP seeds, provider secrets, queued emails |
-| Admin panel | Private port, token login with rate limit, optional IP allowlist, `SameSite=Strict`, CSRF tokens, origin check, strict CSP, audit log |
+| Automation and AI agents with too much power | Access tokens scoped per resource (read or write), always expiring (max 90 days), optional IP ranges, hashed at rest, checked on every request, cannot mint tokens or change admin access, refused from browsers, rate limited and audited |
+| Admin panel | Private port, token login with rate limit, 30 minute idle timeout, optional IP allowlist, `SameSite=Strict`, CSRF tokens, origin check, strict CSP, audit log |
 | Account takeover going unnoticed | Email on sign-in from a new device with a one-click (confirmed) sign-out of that session; email when failed passwords lock the account; email on password and two-factor changes |
 | Unknown clients, other sites calling the API | Publishable keys bound to origins; optional enforcement; CORS allowlist without wildcards |
 | Leaked or misused backend credentials | Secret keys hashed at rest, shown once, per-key revocation and rate limit, rejected from browsers |
@@ -331,7 +334,7 @@ go test -tags integration ./test/e2e/ -count=1        # integration tests agains
 
 `make help` lists shortcuts (lint, proto generation, image build, load test). Regenerate gRPC code with `buf generate` after editing `api/proto`.
 
-Commands of the binary: `warden serve` (default), `warden setup`, `warden migrate [status]`, `warden reencrypt`, `warden keygen`, `warden healthcheck`, `warden version`.
+Commands of the binary: `warden serve` (default), `warden setup`, `warden migrate [status]`, `warden reencrypt`, `warden mcp`, `warden keygen`, `warden healthcheck`, `warden version`.
 
 For production deployment, scaling and the go-live checklist see [docs/production.md](docs/production.md).
 

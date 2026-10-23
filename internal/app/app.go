@@ -15,6 +15,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/fatihacan1/warden/internal/accesstokens"
 	"github.com/fatihacan1/warden/internal/apikeys"
 	"github.com/fatihacan1/warden/internal/auth"
 	"github.com/fatihacan1/warden/internal/avatar"
@@ -199,6 +200,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 		Config: cfg, Auth: a.Auth, Store: a.Store, Redis: a.Redis, OAuth: a.OAuth, Keys: a.Keys,
 		Limiter: limiter, Metrics: a.Metrics, Log: log, Ready: ready, Events: publisher != nil, Settings: a.Settings,
 		APIKeys: a.APIKeys, Webhooks: a.Webhooks, Mail: a.Mail, Renderer: renderer, Sender: sender,
+		AccessTokens: accesstokens.NewManager(a.Store, log),
 	}); err != nil {
 		a.Close()
 		return nil, err
@@ -306,6 +308,9 @@ func (a *App) cleanupLoop(ctx context.Context) {
 			}
 			d, err := a.Store.DeleteStaleDevices(ctx, now.Add(-180*24*time.Hour))
 			if err != nil {
+				return err
+			}
+			if _, err := a.Store.DeleteDeadAccessTokens(ctx, now.Add(-30*24*time.Hour)); err != nil {
 				return err
 			}
 			a.Log.Info("cleanup finished", "sessions", s, "outbox", o, "audit", au, "devices", d)

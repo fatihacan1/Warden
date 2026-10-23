@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/url"
@@ -160,7 +161,7 @@ func TestAdminPagesRender(t *testing.T) {
 	a := adminLogin(t)
 	tk := newClient(t).signUp(randEmail(), pw)
 	for _, p := range []string{"/admin", "/admin/settings", "/admin/providers", "/admin/users", "/admin/users?q=example", "/admin/users/" + tk.UserID, "/admin/keys", "/admin/setup",
-		"/admin/api-keys", "/admin/webhooks", "/admin/emails", "/admin/emails/verify_email", "/admin/emails/layout", "/admin/docs"} {
+		"/admin/api-keys", "/admin/webhooks", "/admin/emails", "/admin/emails/verify_email", "/admin/emails/layout", "/admin/docs", "/admin/access-tokens"} {
 		res, body := adminDo(t, "GET", p, a.cookie, nil, nil)
 		if res.StatusCode != 200 || !strings.Contains(body, "</html>") {
 			t.Errorf("%s: %d", p, res.StatusCode)
@@ -250,5 +251,22 @@ func TestAdminRuntimeSettings(t *testing.T) {
 	adminDo(t, "POST", "/admin/settings/reset", a.cookie, url.Values{"_csrf": {a.csrf}}, nil)
 	if c.do("POST", "/v1/auth/signup", map[string]string{"email": randEmail(), "password": pw}, "").Status != 201 {
 		t.Fatal("sign-ups not restored after reset")
+	}
+}
+
+func TestAdminIdleTimeout(t *testing.T) {
+	a := adminLogin(t)
+	keys, _ := A.Redis.Keys(context.Background(), "admin:sess:*").Result()
+	for _, k := range keys {
+		raw, _ := A.Redis.Get(context.Background(), k).Bytes()
+		var sess map[string]any
+		_ = json.Unmarshal(raw, &sess)
+		sess["seen"] = time.Now().Add(-2 * time.Hour)
+		b, _ := json.Marshal(sess)
+		A.Redis.Set(context.Background(), k, b, time.Hour)
+	}
+	res, _ := adminDo(t, "GET", "/admin", a.cookie, nil, nil)
+	if res.StatusCode != 303 && res.StatusCode != 302 || !strings.Contains(res.Header.Get("Location"), "expired=1") {
+		t.Fatalf("idle session still valid: %d %s", res.StatusCode, res.Header.Get("Location"))
 	}
 }
