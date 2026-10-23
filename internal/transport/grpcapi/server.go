@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,10 +17,12 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -41,21 +44,39 @@ type Server struct {
 	keys    [][32]byte // SHA-256 of accepted API keys
 	grpc    *grpc.Server
 	health  *health.Server
+
+	mtlsOnly bool
 }
 
-func New(a *auth.Service, tokens *token.Issuer, apiKeys []string, reflect bool, log *slog.Logger, m *observability.Metrics) *Server {
-	s := &Server{auth: a, tokens: tokens, log: log, metrics: m}
-	for _, k := range apiKeys {
+// Options configure the gRPC server.
+type Options struct {
+	APIKeys    []string
+	Reflection bool
+	// TLS, when set, makes the port serve TLS. With ClientAuth set to
+	// RequireAndVerifyClientCert this is mutual TLS.
+	TLS *tls.Config
+	// MTLSOnly accepts a verified client certificate instead of an API key.
+	MTLSOnly bool
+}
+
+func New(a *auth.Service, tokens *token.Issuer, opt Options, log *slog.Logger, m *observability.Metrics) *Server {
+	s := &Server{auth: a, tokens: tokens, log: log, metrics: m, mtlsOnly: opt.MTLSOnly}
+	for _, k := range opt.APIKeys {
 		s.keys = append(s.keys, sha256.Sum256([]byte(k)))
 	}
-	s.grpc = grpc.NewServer(
+	reflect := opt.Reflection
+	var creds []grpc.ServerOption
+	if opt.TLS != nil {
+		creds = append(creds, grpc.Creds(credentials.NewTLS(opt.TLS)))
+	}
+	s.grpc = grpc.NewServer(append(creds,
 		grpc.ChainUnaryInterceptor(s.recoverer, s.observe, s.authenticate),
 		grpc.MaxRecvMsgSize(1<<20),
 		grpc.MaxConcurrentStreams(1000),
 		grpc.ConnectionTimeout(5*time.Second),
 		grpc.KeepaliveParams(keepalive.ServerParameters{MaxConnectionIdle: 5 * time.Minute, Time: time.Minute, Timeout: 20 * time.Second}),
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{MinTime: 15 * time.Second, PermitWithoutStream: true}),
-	)
+	)...)
 	wardenv1.RegisterAuthServiceServer(s.grpc, s)
 	s.health = health.NewServer()
 	healthpb.RegisterHealthServer(s.grpc, s.health)
@@ -96,12 +117,29 @@ func (s *Server) authenticate(ctx context.Context, req any, info *grpc.UnaryServ
 	if strings.HasPrefix(info.FullMethod, "/grpc.health.v1.Health/") {
 		return next(ctx, req)
 	}
+	if s.mtlsOnly {
+		if !verifiedClientCert(ctx) {
+			return nil, status.Error(codes.Unauthenticated, "a verified client certificate is required")
+		}
+		return next(ctx, req)
+	}
 	md, _ := metadata.FromIncomingContext(ctx)
 	vals := md.Get("x-api-key")
 	if len(vals) != 1 || !s.validKey(vals[0]) {
 		return nil, status.Error(codes.Unauthenticated, "missing or invalid api key")
 	}
 	return next(ctx, req)
+}
+
+// verifiedClientCert reports whether the peer presented a client certificate
+// that the TLS layer verified against GRPC_TLS_CLIENT_CA_FILE.
+func verifiedClientCert(ctx context.Context) bool {
+	p, ok := peer.FromContext(ctx)
+	if !ok {
+		return false
+	}
+	ti, ok := p.AuthInfo.(credentials.TLSInfo)
+	return ok && len(ti.State.VerifiedChains) > 0
 }
 
 // validKey compares hashes in constant time against every configured key.
@@ -192,6 +230,11 @@ func (s *Server) VerifyAccessToken(ctx context.Context, req *wardenv1.VerifyAcce
 	claims, err := s.tokens.Verify(req.GetAccessToken())
 	if err != nil {
 		return &wardenv1.VerifyAccessTokenResponse{Valid: false, Reason: "invalid_token"}, nil
+	}
+	if claims.IsMachine() {
+		// Service tokens have no user or session; introspect them over
+		// POST /v1/server/tokens/verify.
+		return &wardenv1.VerifyAccessTokenResponse{Valid: false, Reason: "service_token"}, nil
 	}
 	sid, err := claims.SID()
 	if err != nil {

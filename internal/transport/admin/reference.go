@@ -118,8 +118,13 @@ func authLabel(sec []map[string]any) string {
 	}
 	var names []string
 	for _, req := range sec {
+		if len(req) == 0 {
+			names = append(names, "Public")
+		}
 		for k := range req {
 			switch k {
+			case "clientBasic":
+				names = append(names, "Client credentials")
 			case "bearer":
 				names = append(names, "Access token")
 			case "secretKey":

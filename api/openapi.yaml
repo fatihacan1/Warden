@@ -308,24 +308,57 @@ paths:
   /v1/oauth/token:
     post:
       tags: [OAuth]
-      summary: Exchange the one-time login code for tokens
+      summary: Exchange the one-time login code for tokens, or get a service token (client credentials)
+      description: |
+        Login code exchange after social sign-in, and the client credentials grant for service-to-service tokens.
+
+        **Login code exchange** (JSON body with `code`, `code_verifier`, `redirect_uri`) returns the user's tokens after a social sign-in.
+
+        **Client credentials** (RFC 6749 section 4.4, `grant_type=client_credentials`) lets a service client created under *Service clients* in the admin UI get a short-lived access token for calling other services. Authenticate with HTTP Basic (`client_secret_basic`, preferred) or with `client_id` and `client_secret` in the body (`client_secret_post`). The body is `application/x-www-form-urlencoded` (RFC) or JSON. The token is an ES256 JWT (`typ: at+jwt`) with `sub: client:<client_id>`, `client_id`, `scope` (space separated), `aud`, `iss`, `exp`, `iat`, `jti`, and no user, session, email or roles. Verify it offline with the JWKS, check your own audience and the `scope` claim. No refresh token is issued; ask again when it expires. Service tokens are rejected by every `/v1/me` endpoint and by GraphQL, and `POST /v1/server/tokens/verify` introspects them.
+
+        Errors for the client credentials grant use the RFC 6749 section 5.2 shape `{"error": "...", "error_description": "..."}`: `invalid_client` (401, same answer for an unknown client, a wrong secret and a revoked client; carries `WWW-Authenticate: Basic` when Basic was used), `invalid_request`, `unsupported_grant_type`, `invalid_scope` and `invalid_target` (RFC 8707, an audience the client may not use), all 400. Rate limits answer 429 with Warden's usual error body.
       operationId: oauthToken
-      security: []
+      security: [{}, { clientBasic: [] }]
       parameters: [{ $ref: "#/components/parameters/AuthMode" }]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [code, code_verifier, redirect_uri]
-              properties:
-                code: { type: string }
-                code_verifier: { type: string, minLength: 43, maxLength: 128 }
-                redirect_uri: { type: string }
+              oneOf:
+                - type: object
+                  title: Login code exchange
+                  required: [code, code_verifier, redirect_uri]
+                  properties:
+                    code: { type: string }
+                    code_verifier: { type: string, minLength: 43, maxLength: 128 }
+                    redirect_uri: { type: string }
+                - $ref: "#/components/schemas/ClientCredentialsRequest"
+          application/x-www-form-urlencoded:
+            schema: { $ref: "#/components/schemas/ClientCredentialsRequest" }
       responses:
-        "200": { $ref: "#/components/responses/Auth" }
-        "401": { $ref: "#/components/responses/Error" }
+        "200":
+          description: User tokens (login code exchange) or a service token (client credentials)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/AuthResponse"
+                  - $ref: "#/components/schemas/ClientCredentialsResponse"
+        "400":
+          description: Client credentials error (invalid_request, unsupported_grant_type, invalid_scope, invalid_target)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+        "401":
+          description: Invalid login code, or invalid_client
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/Error"
+                  - $ref: "#/components/schemas/OAuthError"
+        "429": { $ref: "#/components/responses/RateLimited" }
 
   /v1/oauth/{provider}/native:
     post:
@@ -696,7 +729,7 @@ paths:
     post:
       tags: [Server]
       summary: Introspect an access token
-      description: Signature, expiry and revocation check. With check_session the session and user are loaded from the database and the current roles are returned.
+      description: Signature, expiry and revocation check. Service tokens (client credentials) are understood too; the answer has token_type service, client_id, scope and aud, no user, and is inactive (client_revoked) once the client is revoked. With check_session the session and user are loaded from the database and the current roles are returned.
       operationId: serverVerifyToken
       security: [{ secretKey: [] }]
       requestBody:
@@ -804,6 +837,10 @@ components:
       type: http
       scheme: bearer
       description: Secret key (sk_live_... / sk_test_...) from the admin UI. Server to server only; requests with a browser Origin header are rejected.
+    clientBasic:
+      type: http
+      scheme: basic
+      description: Service client credentials (client_id as user name, client_secret as password) for the client credentials grant.
     publishableKey:
       type: apiKey
       in: header
@@ -861,6 +898,31 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
 
   schemas:
+    ClientCredentialsRequest:
+      type: object
+      title: Client credentials grant
+      required: [grant_type]
+      properties:
+        grant_type: { type: string, enum: [client_credentials] }
+        client_id: { type: string, description: "Only for client_secret_post; omit when using HTTP Basic", examples: [svc_Zk3vN9aQ2xTt] }
+        client_secret: { type: string, description: "Only for client_secret_post; omit when using HTTP Basic" }
+        scope: { type: string, description: Space separated scopes, a subset of the client's allowed scopes. Default is all of them., examples: ["orders:read orders:write"] }
+        audience: { type: string, description: A service that will receive the token, from the client's allowed list. Default is the first one. }
+        resource: { type: string, description: "RFC 8707 name for audience; may be repeated in a form body" }
+    ClientCredentialsResponse:
+      type: object
+      required: [access_token, token_type, expires_in, scope]
+      properties:
+        access_token: { type: string, description: ES256 JWT }
+        token_type: { type: string, enum: [Bearer] }
+        expires_in: { type: integer, description: Seconds until it expires }
+        scope: { type: string, description: Granted scopes, space separated }
+    OAuthError:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string, enum: [invalid_request, invalid_client, unsupported_grant_type, invalid_scope, invalid_target] }
+        error_description: { type: string }
     Error:
       type: object
       required: [error]
@@ -934,7 +996,13 @@ components:
       required: [active]
       properties:
         active: { type: boolean }
-        reason: { type: string, enum: [invalid_token, session_revoked, user_disabled] }
+        reason: { type: string, enum: [invalid_token, session_revoked, user_disabled, client_revoked] }
+        token_type: { type: string, enum: [service], description: "Only on service tokens (client credentials). They have no user_id, session_id, email or roles." }
+        sub: { type: string, description: "Service tokens only: client:<client_id>" }
+        client_id: { type: string, description: Service tokens only }
+        client_name: { type: string, description: Service tokens only }
+        scope: { type: string, description: "Service tokens only, space separated" }
+        aud: { type: array, items: { type: string }, description: Service tokens only }
         user_id: { type: string, format: uuid }
         session_id: { type: string, format: uuid }
         email: { type: string }

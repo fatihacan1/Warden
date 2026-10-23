@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -29,7 +30,21 @@ type Claims struct {
 	EmailVerified bool     `json:"email_verified"`
 	Roles         []string `json:"roles,omitempty"`
 	AMR           []string `json:"amr,omitempty"`
+	// ClientID and Scope are set on machine tokens (client credentials grant,
+	// RFC 9068 section 2.2). They are never present on user tokens.
+	ClientID string `json:"client_id,omitempty"`
+	Scope    string `json:"scope,omitempty"`
 }
+
+// ClientSubjectPrefix starts the "sub" of every machine token.
+const ClientSubjectPrefix = "client:"
+
+// IsMachine reports whether the token was issued to a service client rather
+// than a user. Endpoints that act on behalf of a user must reject these.
+func (c *Claims) IsMachine() bool { return c.ClientID != "" }
+
+// Scopes returns the granted scopes of a machine token.
+func (c *Claims) Scopes() []string { return strings.Fields(c.Scope) }
 
 // Subject is the parsed user id.
 func (c *Claims) UserID() (uuid.UUID, error) { return uuid.Parse(c.Subject) }
@@ -98,6 +113,49 @@ func (i *Issuer) Issue(s Subject) (string, time.Time, error) {
 	return signed, exp, nil
 }
 
+// ClientSubject describes the service client a machine token is for.
+type ClientSubject struct {
+	ClientID string
+	Scopes   []string
+	Audience []string
+	TTL      time.Duration
+}
+
+// IssueClient signs an access token for a service client. It carries no
+// session, e-mail or roles.
+func (i *Issuer) IssueClient(s ClientSubject) (string, time.Time, error) {
+	key := i.keys.active()
+	if key == nil {
+		return "", time.Time{}, errors.New("token: no active signing key")
+	}
+	if s.ClientID == "" || len(s.Audience) == 0 || s.TTL <= 0 {
+		return "", time.Time{}, errors.New("token: client token needs client id, audience and ttl")
+	}
+	now := i.now()
+	exp := now.Add(s.TTL)
+	claims := Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    i.issuer,
+			Subject:   ClientSubjectPrefix + s.ClientID,
+			Audience:  s.Audience,
+			ExpiresAt: jwt.NewNumericDate(exp),
+			NotBefore: jwt.NewNumericDate(now),
+			IssuedAt:  jwt.NewNumericDate(now),
+			ID:        uuid.NewString(),
+		},
+		ClientID: s.ClientID,
+		Scope:    strings.Join(s.Scopes, " "),
+	}
+	t := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+	t.Header["kid"] = key.kid
+	t.Header["typ"] = AccessTokenType
+	signed, err := t.SignedString(key.private)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("token: sign: %w", err)
+	}
+	return signed, exp, nil
+}
+
 // ErrInvalid is returned for any token that fails verification.
 var ErrInvalid = errors.New("token: invalid")
 
@@ -125,6 +183,15 @@ func (i *Issuer) Verify(raw string) (*Claims, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
+	}
+	if claims.IsMachine() {
+		// Machine tokens are minted for the services named in "aud", which
+		// are not necessarily this instance's own audience: each resource
+		// server checks its own. Verify only requires one to be present.
+		if claims.Subject != ClientSubjectPrefix+claims.ClientID || claims.SessionID != "" || len(claims.Audience) == 0 {
+			return nil, fmt.Errorf("%w: malformed client token", ErrInvalid)
+		}
+		return &claims, nil
 	}
 	if !audienceMatches(claims.Audience, i.audience) {
 		return nil, fmt.Errorf("%w: audience mismatch", ErrInvalid)

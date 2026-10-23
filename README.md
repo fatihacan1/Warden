@@ -54,7 +54,8 @@ Warden issues short-lived **ES256 JWT access tokens** that your services verify 
 **Operations**
 - Setup wizard (`warden setup`): a step-by-step onboarding that tests database, Redis, SMTP, S3 and RabbitMQ before moving on, generates secrets, picks the encryption algorithm and writes `.env`
 - Private admin UI: feature toggles, provider credentials, users, sessions, keys, email templates in a code editor with live preview, optional IP allowlist
-- Internal gRPC API for service-to-service calls (verify token, users, roles, disable, revoke)
+- Internal gRPC API for service-to-service calls (verify token, users, roles, disable, revoke), with optional TLS 1.3 and mutual TLS
+- Service-to-service authentication with the OAuth 2.0 client credentials grant: microservices get short-lived JWTs, verifiable offline with the JWKS, scoped and audience-bound, with secret rotation without downtime
 - Domain events to RabbitMQ through a transactional outbox (`user.created`, `user.signed_in`, ...)
 - Avatar uploads to any S3-compatible store (AWS S3, Garage, Cloudflare R2, MinIO, Backblaze B2)
 - Encryption at rest with AES-256-GCM or XChaCha20-Poly1305, key rotation without downtime (`warden reencrypt`)
@@ -239,7 +240,7 @@ Full schema: [api/openapi.yaml](api/openapi.yaml). Errors always look like `{"er
 | POST | `/v1/auth/password/reset` | Set a new password with a reset token |
 | GET | `/v1/oauth/{provider}/authorize` | Start social sign-in (PKCE) |
 | GET/POST | `/v1/oauth/{provider}/callback` | Provider callback (POST for Apple) |
-| POST | `/v1/oauth/token` | Exchange the one-time login code for tokens |
+| POST | `/v1/oauth/token` | Exchange the one-time login code for tokens; with `grant_type=client_credentials`, get a service token (OAuth 2.0 client credentials) |
 | POST | `/v1/oauth/{provider}/native` | Native Apple/Google ID token sign-in |
 | GET, PATCH, DELETE | `/v1/me` | Profile, update name, delete account |
 | POST | `/v1/me/password` | Change or set password |
@@ -259,7 +260,9 @@ Full schema: [api/openapi.yaml](api/openapi.yaml). Errors always look like `{"er
 
 **Access token claims**: `iss`, `sub` (user id), `aud`, `exp`, `iat`, `nbf`, `jti`, `sid` (session id), `email`, `email_verified`, `roles`, `amr` (how the user authenticated, e.g. `pwd`, `mfa`, `oauth:google`).
 
-**gRPC** (`warden.v1.AuthService`, port 9091, `x-api-key` metadata): `VerifyAccessToken`, `GetUser`, `GetUsers`, `SetUserRoles`, `SetUserDisabled`, `RevokeUserSessions`. Generated Go client: `github.com/fatihacan1/warden/pkg/api/wardenv1`; proto: [api/proto](api/proto).
+**Service token claims** (client credentials): `iss`, `sub` (`client:<client_id>`), `client_id`, `scope` (space separated), `aud`, `exp`, `iat`, `nbf`, `jti`. No `sid`, `email` or `roles`. See [Service-to-service](docs/integration.md#service-to-service).
+
+**gRPC** (`warden.v1.AuthService`, port 9091, `x-api-key` metadata, optional TLS 1.3 and mutual TLS): `VerifyAccessToken`, `GetUser`, `GetUsers`, `SetUserRoles`, `SetUserDisabled`, `RevokeUserSessions`. Generated Go client: `github.com/fatihacan1/warden/pkg/api/wardenv1`; proto: [api/proto](api/proto).
 
 **Events** (RabbitMQ topic exchange `warden.events`, routing key = type): `user.created`, `user.updated`, `user.deleted`, `user.email_verified`, `user.password_changed`, `user.signed_in`, `user.disabled`, `user.enabled`, `user.mfa_enabled`, `user.mfa_disabled`, `identity.linked`, `identity.unlinked`, `session.revoked`. Delivery is at-least-once; deduplicate on the event `id`. The same events go to **webhooks** configured in the admin UI, with no broker needed.
 
@@ -300,6 +303,8 @@ Configuration is validated at startup. Unsafe combinations are rejected with a c
 | Malicious avatar uploads | Size and pixel limits (decompression bombs), decoded and re-encoded as JPEG (strips EXIF and polyglots) |
 | Secrets at rest | AES-256-GCM with per-record associated data for signing keys, TOTP seeds, provider secrets, queued emails |
 | Automation and AI agents with too much power | Access tokens scoped per resource (read or write), always expiring (max 90 days), optional IP ranges, hashed at rest, checked on every request, cannot mint tokens or change admin access, refused from browsers, rate limited and audited |
+| Service-to-service calls with shared secrets or user tokens | OAuth 2.0 client credentials: a client per service with allowed scopes and audiences, 256-bit secrets hashed at rest, access tokens of 15 minutes (max 1 hour) verifiable offline with the JWKS, no user claims so every user endpoint refuses them, secret rotation with a 1 or 24 hour grace period, per-client and per-IP rate limits, one `invalid_client` answer for unknown, wrong and revoked, audit log |
+| Untrusted callers on the internal gRPC port | API keys, plus optional TLS 1.3 and mutual TLS (`GRPC_TLS_*`, client certificates verified against your CA; `GRPC_MTLS_ONLY` accepts a certificate instead of a key) |
 | Admin panel | Private port, token login with rate limit, 30 minute idle timeout, optional IP allowlist, `SameSite=Strict`, CSRF tokens, origin check, strict CSP, audit log |
 | Account takeover going unnoticed | Email on sign-in from a new device with a one-click (confirmed) sign-out of that session; email when failed passwords lock the account; email on password and two-factor changes |
 | Unknown clients, other sites calling the API | Publishable keys bound to origins; optional enforcement; CORS allowlist without wildcards |

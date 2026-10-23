@@ -175,6 +175,9 @@ func (s *Server) graphqlHandler(c fiber.Ctx) error {
 			if err != nil {
 				return domain.ErrInvalidToken
 			}
+			if claims.IsMachine() {
+				return domain.ErrInvalidToken
+			}
 			uid, err1 := claims.UserID()
 			sid, err2 := claims.SID()
 			if err1 != nil || err2 != nil || s.auth.SessionRevoked(c.Context(), sid) {

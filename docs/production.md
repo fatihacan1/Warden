@@ -12,6 +12,7 @@
 - [ ] `PASSWORD_CHECK_BREACHED=true` if the instance has outbound internet access
 - [ ] Redirect URIs and CORS origins list only your production apps
 - [ ] `GRPC_REFLECTION=false`
+- [ ] gRPC traffic that leaves a trusted network uses TLS 1.3 and, ideally, mutual TLS (`GRPC_TLS_CERT_FILE`, `GRPC_TLS_KEY_FILE`, `GRPC_TLS_CLIENT_CA_FILE`); see [integration.md](integration.md#tls-and-mutual-tls)
 - [ ] A publishable key per app (bound to its origins) and **Require a publishable key** turned on in Settings once every app sends one
 - [ ] Secret keys only in backend secret stores; one per service so each can be revoked alone
 - [ ] Webhook endpoints use `https://`; `WEBHOOK_ALLOW_PRIVATE_NETWORKS` stays unset (private targets blocked)

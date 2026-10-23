@@ -101,6 +101,14 @@ type GRPCConfig struct {
 	Addr       string   `env:"ADDR" envDefault:":9091"`
 	APIKeys    []string `env:"API_KEYS" envSeparator:","`
 	Reflection bool     `env:"REFLECTION" envDefault:"false"`
+
+	// TLS. With a certificate and key the port serves TLS 1.3. With a client
+	// CA it also requires and verifies client certificates (mutual TLS).
+	TLSCertFile     string `env:"TLS_CERT_FILE"`
+	TLSKeyFile      string `env:"TLS_KEY_FILE"`
+	TLSClientCAFile string `env:"TLS_CLIENT_CA_FILE"`
+	// MTLSOnly accepts a verified client certificate in place of an API key.
+	MTLSOnly bool `env:"MTLS_ONLY" envDefault:"false"`
 }
 
 type DatabaseConfig struct {
@@ -220,6 +228,9 @@ type RateLimitConfig struct {
 	GlobalPerMinute int `env:"GLOBAL_PER_MINUTE" envDefault:"600"`
 	// Requests per minute per client IP on credential endpoints.
 	AuthPerMinute int `env:"AUTH_PER_MINUTE" envDefault:"30"`
+	// Client credentials token requests per minute, per client id and per IP.
+	ClientTokenPerMinute   int `env:"CLIENT_TOKEN_PER_MINUTE" envDefault:"120"`
+	ClientTokenIPPerMinute int `env:"CLIENT_TOKEN_IP_PER_MINUTE" envDefault:"300"`
 }
 
 type ProviderEnv struct {
@@ -435,9 +446,10 @@ func (c *Config) Validate() error {
 		add("ADMIN_TOKEN must be at least 32 characters")
 	}
 	if c.GRPC.Enabled {
-		if len(c.GRPC.APIKeys) == 0 {
-			add("GRPC_API_KEYS is required when GRPC_ENABLED=true")
+		if len(c.GRPC.APIKeys) == 0 && !c.GRPC.MTLSOnly {
+			add("GRPC_API_KEYS is required when GRPC_ENABLED=true (or set GRPC_MTLS_ONLY=true)")
 		}
+		c.validateGRPCTLS(add)
 		for _, k := range c.GRPC.APIKeys {
 			if len(k) < 32 {
 				add("each GRPC_API_KEYS entry must be at least 32 characters")
@@ -514,7 +526,7 @@ func (c *Config) Validate() error {
 	if c.Auth.LockoutThreshold < 3 {
 		add("AUTH_LOCKOUT_THRESHOLD must be at least 3")
 	}
-	if c.RateLimit.AuthPerMinute < 1 || c.RateLimit.GlobalPerMinute < 1 {
+	if c.RateLimit.AuthPerMinute < 1 || c.RateLimit.GlobalPerMinute < 1 || c.RateLimit.ClientTokenPerMinute < 1 || c.RateLimit.ClientTokenIPPerMinute < 1 {
 		add("RATE_LIMIT_* values must be positive")
 	}
 	// Zero or negative durations must never silently mean "forever" or "off".
