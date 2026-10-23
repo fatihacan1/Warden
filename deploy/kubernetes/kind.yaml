@@ -1,0 +1,18 @@
+# kind create cluster --name warden --config deploy/kubernetes/kind.yaml
+# Maps host ports 18080/18443 to an ingress controller on the node (see
+# docs/kubernetes.md). Non-default host ports, so it runs next to the Docker
+# Compose stack. kindnet does not enforce NetworkPolicy; to test the policies,
+# set networking.disableDefaultCNI: true and install Calico or Cilium.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - { containerPort: 80, hostPort: 18080, protocol: TCP }
+      - { containerPort: 443, hostPort: 18443, protocol: TCP }

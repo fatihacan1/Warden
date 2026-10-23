@@ -67,6 +67,8 @@ Requirements: Docker Desktop (or Docker Engine with Compose v2). Go 1.26+ only f
 
 **Guided:** `go run ./cmd/warden setup` (or `make setup`) prints a link to a local page that walks you through each connection, tests it, generates secrets and writes `.env`. Then `docker compose up -d --build`.
 
+**Kubernetes:** Kustomize manifests for kind and production are in [deploy/kubernetes](deploy/kubernetes); see [docs/kubernetes.md](docs/kubernetes.md).
+
 | 1. Welcome | 2. Each connection tested | 3. Review, then write `.env` |
 | --- | --- | --- |
 | ![Setup welcome](docs/images/setup-welcome.png) | ![Setup step: PostgreSQL connected](docs/images/admin-setup-onboarding.png) | ![Setup review](docs/images/setup-review.png) |

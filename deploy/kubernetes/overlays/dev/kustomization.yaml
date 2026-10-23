@@ -1,0 +1,57 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Local cluster (kind): one replica, in-cluster Postgres/Redis, Mailpit, no TLS.
+# NOT for production: the databases here have no backups or HA.
+namespace: warden
+
+resources:
+  - ../../base
+  - postgres.yaml
+  - redis.yaml
+  - mailpit.yaml
+  - networkpolicy.yaml
+
+images:
+  - name: warden
+    newName: warden
+    newTag: k8s
+
+replicas:
+  - name: warden
+    count: 1
+
+configMapGenerator:
+  - name: warden-config
+    behavior: merge
+    literals:
+      - APP_ENV=development
+      - LOG_FORMAT=text
+      - HTTP_PUBLIC_URL=http://localhost:18081
+      - HTTP_COOKIE_SECURE=false
+      - HTTP_CORS_ALLOWED_ORIGINS=http://localhost:3000
+      - SMTP_HOST=mailpit
+      - SMTP_PORT=1025
+      - SMTP_TLS_POLICY=none
+      - SMTP_FROM=Warden <no-reply@example.com>
+
+# secrets.env is yours and gitignored; copy secrets.env.example.
+secretGenerator:
+  - name: warden-secrets
+    envs:
+      - secrets.env
+
+patches:
+  # No autoscaling on a laptop.
+  - target: { kind: HorizontalPodAutoscaler, name: warden }
+    patch: |-
+      $patch: delete
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: warden
+  - target: { kind: Ingress, name: warden }
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: warden.localtest.me

@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# Needs the Prometheus Operator CRDs (kube-prometheus-stack). If your
+# Prometheus selects resources by a release label, add it to both resources.
+resources:
+  - servicemonitor.yaml
+  - prometheusrule.yaml

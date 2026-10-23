@@ -72,7 +72,7 @@ Providers handle the two environments differently:
 ```
 
 - Run at least two replicas. Any replica can serve any request; there is no sticky session.
-- Migrations run automatically at startup under a Postgres advisory lock. To run them as a separate deploy step instead, set `DATABASE_AUTO_MIGRATE=false` and run `warden migrate`.
+- Migrations run automatically at startup under a Postgres advisory lock. To run them as a separate deploy step instead, set `DATABASE_AUTO_MIGRATE=false` and run `warden migrate` (the Kubernetes manifests do this in an init container).
 - Readiness: `GET /readyz` on port 8080 (Postgres and Redis). Liveness: `GET /healthz`. The container image also has `HEALTHCHECK` built in (`warden healthcheck`).
 - On `SIGTERM` Warden stops accepting connections, finishes in-flight requests (up to `HTTP_SHUTDOWN_TIMEOUT`, 20 s) and exits. Give your orchestrator a longer termination grace period than that.
 
@@ -87,9 +87,12 @@ The image is distroless, about 65 MB, runs as a non-root user and contains only 
 
 ### Kubernetes notes
 
+Ready-made Kustomize manifests (restricted pod security, network policies, HPA, PDB, ingress, monitoring) are in [deploy/kubernetes](../deploy/kubernetes); see [kubernetes.md](kubernetes.md) for the guide.
+
 - Set memory requests/limits and `GOMEMLIMIT` to roughly 90% of the limit so the Go GC works before the kernel OOM killer does.
 - Budget memory: about 30 MiB baseline + 19 MiB x `PASSWORD_MAX_CONCURRENT_HASHES` (default 2 x CPU). Four CPUs: about 200 MiB.
 - Scale on CPU: password hashing dominates CPU, everything else is cheap.
+- Give the pod a `terminationGracePeriodSeconds` above `HTTP_SHUTDOWN_TIMEOUT` plus a short `preStop` delay, and never expose port 9090 through the ingress.
 
 ## Sizing
 

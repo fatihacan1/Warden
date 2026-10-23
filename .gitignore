@@ -20,3 +20,6 @@ Thumbs.db
 .playwright-cli/
 output/
 .impeccable/
+
+# Kubernetes secrets (real values; only the .example files are committed)
+deploy/kubernetes/**/secrets.env

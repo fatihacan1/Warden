@@ -1,0 +1,75 @@
+# Converted from deploy/prometheus/alerts.yml. Keep the two in sync.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: warden
+  labels:
+    app.kubernetes.io/name: warden
+spec:
+  groups:
+    - name: warden
+      rules:
+        - alert: WardenDown
+          expr: up{job="warden"} == 0
+          for: 2m
+          labels: { severity: critical }
+          annotations:
+            summary: "Warden {{ $labels.instance }} is not responding to scrapes"
+
+        - alert: WardenHighErrorRate
+          expr: |
+            sum(rate(warden_http_requests_total{status=~"5.."}[5m]))
+              / clamp_min(sum(rate(warden_http_requests_total[5m])), 1) > 0.02
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: "More than 2% of Warden requests fail with 5xx"
+
+        - alert: WardenSlowRequests
+          expr: |
+            histogram_quantile(0.95, sum by (le) (rate(warden_http_request_duration_seconds_bucket{route!~"/healthz|/readyz"}[5m]))) > 1
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "Warden p95 latency is above 1s"
+
+        - alert: WardenShedding
+          expr: sum(rate(warden_http_shed_total[5m])) > 0
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "Warden is rejecting requests because HTTP_MAX_IN_FLIGHT is reached; add replicas"
+
+        - alert: WardenPasswordHashSaturated
+          expr: sum(rate(warden_password_hash_rejected_total[5m])) > 0
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "Password hashing is saturated; sign-ins get 503. Add CPU or replicas"
+
+        - alert: WardenOutboxBacklog
+          expr: max(warden_outbox_pending) > 1000
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "Emails, events or webhooks are piling up ({{ $value }} pending)"
+
+        - alert: WardenDeadLetters
+          expr: max(warden_outbox_dead) > 0
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: "Some emails, events or webhooks failed permanently; check the admin UI and logs"
+
+        - alert: WardenRefreshTokenReuse
+          expr: sum(increase(warden_auth_events_total{event="refresh",result="reuse_detected"}[15m])) > 5
+          labels: { severity: warning }
+          annotations:
+            summary: "Refresh token reuse detected repeatedly: possible token theft"
+
+        - alert: WardenCredentialStuffing
+          expr: sum(rate(warden_auth_events_total{event="sign_in",result=~"invalid|locked"}[5m])) > 5
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "Sustained failed sign-ins ({{ $value }}/s): possible credential stuffing"

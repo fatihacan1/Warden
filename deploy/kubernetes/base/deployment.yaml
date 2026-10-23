@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: warden
+  labels:
+    app.kubernetes.io/name: warden
+    app.kubernetes.io/component: auth
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: warden
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: warden
+        app.kubernetes.io/component: auth
+    spec:
+      serviceAccountName: warden
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      # preStop sleep (10s) + HTTP_SHUTDOWN_TIMEOUT (20s) + margin.
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: warden
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: warden
+      initContainers:
+        # Safe to run from every pod: goose holds a Postgres advisory lock, and
+        # it does nothing when the schema is current.
+        - name: migrate
+          image: warden
+          args: ["migrate"]
+          envFrom:
+            - configMapRef:
+                name: warden-config
+            - secretRef:
+                name: warden-secrets
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      containers:
+        - name: warden
+          image: warden
+          args: ["serve"]
+          ports:
+            - { name: http, containerPort: 8080, protocol: TCP }
+            - { name: admin, containerPort: 9090, protocol: TCP }
+          envFrom:
+            - configMapRef:
+                name: warden-config
+            - secretRef:
+                name: warden-secrets
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          lifecycle:
+            preStop:
+              # The image is distroless (no shell, no sleep binary), so use the
+              # built-in sleep action. Lets endpoints and the ingress drain.
+              sleep:
+                seconds: 10
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

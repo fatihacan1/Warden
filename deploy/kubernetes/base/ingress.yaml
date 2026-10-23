@@ -1,0 +1,27 @@
+# Public API only. Example for ingress-nginx; adapt the annotations and
+# ingressClassName for other controllers. The overlays set the host and TLS.
+#
+# HSTS: ingress-nginx sends Strict-Transport-Security on TLS hosts by default
+# (ConfigMap option "hsts", on by default, max-age 1 year). Keep it enabled.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: warden
+  labels:
+    app.kubernetes.io/name: warden
+  annotations:
+    # Avatar upload limit is 2 MiB; leave room for multipart overhead.
+    nginx.ingress.kubernetes.io/proxy-body-size: 3m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: warden.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: warden
+                port: { name: http }

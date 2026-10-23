@@ -1,0 +1,24 @@
+# Egress to the managed datastores. The base policy deliberately excludes
+# private ranges, so managed Postgres/Redis (usually on private IPs) need an
+# explicit rule. Replace the CIDRs with the narrowest ranges that cover your
+# database and Redis endpoints (a /32 per endpoint, or the data subnet).
+# Add RabbitMQ (5671/5672) here too if RABBITMQ_URL is set.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: warden-allow-egress-datastores
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: warden
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: { cidr: 10.20.30.0/24 }   # PostgreSQL subnet, replace
+      ports:
+        - { protocol: TCP, port: 5432 }
+    - to:
+        - ipBlock: { cidr: 10.20.31.0/24 }   # Redis subnet, replace
+      ports:
+        - { protocol: TCP, port: 6379 }
+        - { protocol: TCP, port: 6380 }

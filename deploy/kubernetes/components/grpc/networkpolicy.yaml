@@ -1,0 +1,18 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: warden-allow-grpc
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: warden
+  policyTypes: [Ingress]
+  ingress:
+    # Only pods labeled warden-grpc-client=true, in this namespace. To allow
+    # another namespace, add a namespaceSelector + podSelector pair.
+    - from:
+        - podSelector:
+            matchLabels:
+              warden-grpc-client: "true"
+      ports:
+        - { protocol: TCP, port: 9091 }

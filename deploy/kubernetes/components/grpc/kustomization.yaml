@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# Enables the internal gRPC API (port 9091). Add GRPC_API_KEYS (comma
+# separated, 32+ chars each) to the overlay's secrets.env.
+resources:
+  - service.yaml
+  - networkpolicy.yaml
+
+configMapGenerator:
+  - name: warden-config
+    behavior: merge
+    literals:
+      - GRPC_ENABLED=true
+      - GRPC_ADDR=:9091
+      - GRPC_REFLECTION=false
+
+patches:
+  - target: { kind: Deployment, name: warden }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/ports/-
+        value: { name: grpc, containerPort: 9091, protocol: TCP }
