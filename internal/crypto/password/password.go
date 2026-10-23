@@ -14,7 +14,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"math"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -65,7 +67,7 @@ func NewHasher(p Params, maxConcurrent int, queueTimeout time.Duration, obs Obse
 		p.KeyLength = DefaultParams.KeyLength
 	}
 	if maxConcurrent <= 0 {
-		maxConcurrent = 2 * runtime.GOMAXPROCS(0)
+		maxConcurrent = defaultSlots(p.Memory, runtime.GOMAXPROCS(0), debug.SetMemoryLimit(-1))
 	}
 	if queueTimeout <= 0 {
 		queueTimeout = 3 * time.Second
@@ -194,4 +196,16 @@ func randomBytes(n uint32) []byte {
 		panic("password: " + err.Error())
 	}
 	return b
+}
+
+// defaultSlots is one hash per CPU (more only inflates each hash's latency),
+// capped so in-flight hashes use at most half of GOMEMLIMIT.
+func defaultSlots(memKiB uint32, procs int, memLimit int64) int {
+	n := procs
+	if per := int64(memKiB) * 1024; per > 0 && memLimit > 0 && memLimit < math.MaxInt64 {
+		if byMem := int(memLimit / 2 / per); byMem < n {
+			n = byMem
+		}
+	}
+	return max(n, 1)
 }

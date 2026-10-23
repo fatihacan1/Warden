@@ -110,8 +110,13 @@ func (s *Server) deadline() fiber.Handler {
 		defer cancel()
 		c.SetContext(ctx)
 		err := c.Next()
-		if err == nil && errors.Is(ctx.Err(), context.DeadlineExceeded) && c.Response().StatusCode() >= 500 {
-			return domain.ErrServiceUnavailable
+		if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return err
+		}
+		// Out of time: overload, not a bug. Tell the client to retry instead of a 500.
+		var de *domain.Error
+		if (err != nil && !(errors.As(err, &de) && de.Status < 500)) || (err == nil && c.Response().StatusCode() >= 500) {
+			return domain.ErrServiceUnavailable.WithRetryAfter(time.Second)
 		}
 		return err
 	}

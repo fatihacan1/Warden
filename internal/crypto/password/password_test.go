@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -163,6 +164,19 @@ func BenchmarkHashDefaultParams(b *testing.B) {
 	for b.Loop() {
 		if _, err := h.Hash(context.Background(), "benchmark-password"); err != nil {
 			b.Fatal(err)
+		}
+	}
+}
+
+func TestDefaultSlots(t *testing.T) {
+	const mib = 1 << 20
+	for _, c := range []struct {
+		procs int
+		limit int64
+		want  int
+	}{{12, math.MaxInt64, 12}, {12, 450 * mib, 11}, {4, 450 * mib, 4}, {8, 20 * mib, 1}} {
+		if got := defaultSlots(19*1024, c.procs, c.limit); got != c.want {
+			t.Errorf("defaultSlots(%d, %d) = %d, want %d", c.procs, c.limit, got, c.want)
 		}
 	}
 }
