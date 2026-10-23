@@ -201,11 +201,18 @@ There is no `sid`, `email` or `roles`: it identifies a service, never a user. Wa
 
 Same as a user token (see above): check the signature with the JWKS, `typ`, issuer and **your own audience**, then authorize on `scope`. Tell the two kinds apart with `client_id` (present only on service tokens) or the `client:` prefix of `sub`.
 
-```ts
-import { createWardenServer, isServiceToken } from "@warden/server";
+With the TypeScript SDK (`warden-auth/server`), the receiving service uses `warden.express({ scopes: ["invoices:read"] })` (service tokens are refused on routes that do not opt in), and the calling service uses `createServiceClient({ url, clientId, clientSecret, audience }).fetch(...)`, which caches the token, renews it before it expires and shares one request between concurrent callers:
 
-const warden = createWardenServer({ url: "https://auth.example.com", audience: "billing-api", secretKey: process.env.WARDEN_SECRET_KEY });
-app.use("/internal", warden.middleware({ scopes: ["invoices:read"] })); // machine tokens must carry these scopes
+```ts
+import { createServiceClient, createWardenServer } from "warden-auth/server";
+
+// receiving service
+const warden = createWardenServer({ url: "https://auth.example.com", audience: "billing-api" });
+app.get("/invoices", warden.express({ scopes: ["invoices:read"] }), handler);
+
+// calling service
+const billing = createServiceClient({ url: "https://auth.example.com", clientId, clientSecret, audience: "billing-api", scope: "invoices:read" });
+const res = await billing.fetch("https://billing.internal/invoices");
 ```
 
 ```go
