@@ -12,12 +12,25 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 
+	"github.com/fatihacan1/warden/internal/config"
 	"github.com/fatihacan1/warden/internal/domain"
 	"github.com/fatihacan1/warden/internal/i18n"
 	"github.com/fatihacan1/warden/internal/oauth"
 	"github.com/fatihacan1/warden/internal/settings"
 	"github.com/fatihacan1/warden/internal/store"
 )
+
+func mailModeLabel(cfg *config.Config) string {
+	switch cfg.MailDelivery() {
+	case config.MailSMTP:
+		return "SMTP via " + cfg.SMTP.Host
+	case config.MailDirect:
+		return "Direct from this server (test)"
+	case config.MailInbox:
+		return "Inbox, nothing is sent (test)"
+	}
+	return "Log (development)"
+}
 
 type depStatus struct {
 	Name string
@@ -63,7 +76,7 @@ func (s *Server) overview(c fiber.Ctx) error {
 		{"gRPC API", onOff(cfg.GRPC.Enabled), cfg.GRPC.Enabled},
 		{"RabbitMQ events", onOff(s.Events), s.Events},
 		{"S3 avatars", onOff(cfg.S3.Enabled), cfg.S3.Enabled},
-		{"SMTP delivery", map[bool]string{true: cfg.SMTP.Host, false: "Off (emails go to the log)"}[cfg.SMTP.Host != ""], cfg.SMTP.Host != ""},
+		{"Mail delivery", mailModeLabel(cfg), cfg.MailDelivery() == config.MailSMTP},
 		{"Sentry", onOff(cfg.Sentry.DSN != ""), cfg.Sentry.DSN != ""},
 		{"GraphQL", onOff(cfg.GraphQL.Enabled), cfg.GraphQL.Enabled},
 		{"Webhooks", strconv.Itoa(len(s.Webhooks.List())) + " endpoint(s)", len(s.Webhooks.List()) > 0},

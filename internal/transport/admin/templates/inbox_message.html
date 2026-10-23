@@ -1,0 +1,33 @@
+{{define "content"}}{{$csrf := .CSRF}}{{with .Data}}{{$it := .Item}}
+<p class="crumb"><a href="/admin/inbox">Inbox</a></p>
+<div class="head">
+  <div>
+    <h1>{{$it.Subject}}</h1>
+    <p class="lede">To <strong>{{$it.To}}</strong> · {{date $it.CreatedAt}}</p>
+  </div>
+  <form method="post" action="/admin/inbox/{{$it.ID}}/delete" data-confirm="Delete this email?">
+    <input type="hidden" name="_csrf" value="{{$csrf}}">
+    <button class="btn" type="submit">Delete</button>
+  </form>
+</div>
+
+{{if .Links}}
+<section class="panel">
+  <header><h2>Links</h2></header>
+  <div class="panel-body">
+    {{range .Links}}
+    <div class="row">
+      <a class="mono" href="{{.}}" target="_blank" rel="noopener noreferrer">{{.}}</a>
+      <button type="button" class="btn btn-small" data-copy="{{.}}">Copy</button>
+    </div>
+    {{end}}
+  </div>
+</section>
+{{end}}
+
+<section class="panel preview-panel mt-20" id="preview-panel">
+  <header><h2>Message</h2><div class="row"><button type="button" class="btn btn-small" data-fullscreen="preview-panel">Full screen</button></div></header>
+  <iframe name="preview" class="preview-frame" title="Email" sandbox src="/admin/inbox/{{$it.ID}}/preview"></iframe>
+  <p class="panel-body small mb-0"><a href="/admin/inbox/{{$it.ID}}/preview?view=text" target="preview">Plain text version</a> · <a href="/admin/inbox/{{$it.ID}}/preview" target="preview">HTML version</a></p>
+</section>
+{{end}}{{end}}

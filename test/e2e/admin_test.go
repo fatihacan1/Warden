@@ -161,7 +161,7 @@ func TestAdminPagesRender(t *testing.T) {
 	a := adminLogin(t)
 	tk := newClient(t).signUp(randEmail(), pw)
 	for _, p := range []string{"/admin", "/admin/settings", "/admin/providers", "/admin/users", "/admin/users?q=example", "/admin/users/" + tk.UserID, "/admin/keys", "/admin/setup",
-		"/admin/api-keys", "/admin/webhooks", "/admin/emails", "/admin/emails/verify_email", "/admin/emails/layout", "/admin/docs", "/admin/access-tokens"} {
+		"/admin/api-keys", "/admin/webhooks", "/admin/emails", "/admin/emails/verify_email", "/admin/emails/layout", "/admin/docs", "/admin/access-tokens", "/admin/inbox"} {
 		res, body := adminDo(t, "GET", p, a.cookie, nil, nil)
 		if res.StatusCode != 200 || !strings.Contains(body, "</html>") {
 			t.Errorf("%s: %d", p, res.StatusCode)

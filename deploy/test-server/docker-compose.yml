@@ -1,0 +1,87 @@
+# Warden on a throwaway test server: no domain, no SMTP provider.
+#
+#   ./init.sh                 # detects the public IP, writes .env with fresh secrets
+#   docker compose up -d --build
+#
+# Public: https://<ip-with-dashes>.sslip.io (Caddy, Let's Encrypt certificate).
+# Private: the admin UI listens on 127.0.0.1:9090 only. Reach it with
+#   ssh -L 9090:127.0.0.1:9090 user@server      then open http://localhost:9090
+# Postgres and Redis are not published. Emails go to the admin Inbox.
+# See docs/test-server.md.
+
+name: warden-test
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?run ./init.sh first}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [warden]
+    restart: unless-stopped
+
+  warden:
+    build:
+      context: ../..
+      args:
+        VERSION: test-server
+    image: warden:test-server
+    env_file: [.env]
+    environment:
+      GOMEMLIMIT: 450MiB
+    # The public API (8080) is only reachable through Caddy.
+    expose: ["8080"]
+    ports:
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { memory: 512M }
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: warden
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run ./init.sh first}
+      POSTGRES_DB: warden
+    volumes: ["pgdata:/var/lib/postgresql"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U warden -d warden"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "128mb", "--maxmemory-policy", "volatile-lru"]
+    volumes: ["redisdata:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+# Warden trusts X-Forwarded-For only from this network (the Caddy container).
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
+volumes:
+  caddy-data:
+  caddy-config:
+  pgdata:
+  redisdata:

@@ -34,6 +34,7 @@
 {{end}}
 <main id="main-content" tabindex="-1" class="page{{if not .Nav}} page-narrow{{end}}">
   {{if .Nav}}<p class="page-context">Workspace <span>/</span> {{.Title}}</p>{{end}}
+  {{if and .Nav .MailInbox}}<p class="notice notice-warn" role="status"><strong>Test mail mode.</strong> Warden does not send emails: your users receive nothing. Read them in the <a href="/admin/inbox">Inbox</a>. Set up SMTP before real users sign up.</p>{{end}}
   {{if .Flash}}<p class="notice notice-ok" role="status">{{.Flash}}</p>{{end}}
   {{if .Error}}<p class="notice notice-err" role="alert">{{.Error}}</p>{{end}}
   {{template "content" .}}
@@ -48,6 +49,7 @@
       <a href="/admin/settings" {{if eq .Nav "settings"}}aria-current="page"{{end}}>Settings</a>
       <a href="/admin/providers" {{if eq .Nav "providers"}}aria-current="page"{{end}}>Sign-in providers</a>
       <a href="/admin/emails" {{if eq .Nav "emails"}}aria-current="page"{{end}}>Emails</a>
+      <a href="/admin/inbox" {{if eq .Nav "inbox"}}aria-current="page"{{end}}>Inbox</a>
       <p class="nav-label nav-label-gap">Developers</p>
       <a href="/admin/docs" {{if eq .Nav "docs"}}aria-current="page"{{end}}>API docs</a>
       <a href="/admin/api-keys" {{if eq .Nav "apikeys"}}aria-current="page"{{end}}>API keys</a>

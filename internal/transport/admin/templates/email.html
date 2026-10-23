@@ -71,7 +71,7 @@
         <div class="field">
           <label for="to">To</label>
           <input id="to" name="to" type="text" inputmode="email" autocomplete="email" placeholder="you@example.com">
-          <p class="help">Sends the saved {{.Lang.Name}} version with sample data{{if not .SMTP}} (SMTP is off, so it goes to the log){{end}}.</p>
+          <p class="help">Sends the saved {{.Lang.Name}} version with sample data{{if eq .Mode "inbox"}} (it lands in the Inbox){{else if eq .Mode "log"}} (it goes to the log){{end}}.</p>
         </div>
         <button class="btn" type="submit">Send test email</button>
       </form>

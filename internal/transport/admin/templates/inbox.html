@@ -1,0 +1,53 @@
+{{define "content"}}{{$csrf := .CSRF}}{{with .Data}}
+<div class="head">
+  <div>
+    <h1>Inbox</h1>
+    <p class="lede">Emails Warden would have sent, kept here instead. Open one to copy the verification or reset link. They are stored encrypted, the newest {{.Max}} are kept, for {{.Days}} days.</p>
+  </div>
+  {{if .Active}}<span class="tag tag-warn">Test mail mode: nothing is sent</span>{{else}}<span class="tag">Delivery: {{.Mode}}</span>{{end}}
+</div>
+
+{{if not .Active}}
+<p class="notice notice-warn">The Inbox is not collecting new emails. Warden delivers with <strong>{{.Mode}}</strong>. Set <code>MAIL_DELIVERY=inbox</code> to keep emails here; only use it for testing, because users receive nothing.</p>
+{{end}}
+
+<section class="panel">
+  {{if .Items}}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>To</th><th>Subject</th><th>Received</th><th></th></tr></thead>
+      <tbody>
+        {{range .Items}}
+        <tr>
+          {{if .Broken}}
+          <td colspan="3" class="muted">Cannot be decrypted (the encryption key changed)</td>
+          {{else}}
+          <td><a href="/admin/inbox/{{.ID}}">{{.To}}</a></td>
+          <td>{{.Subject}}</td>
+          <td class="muted" title="{{date .CreatedAt}}">{{ago .CreatedAt}}</td>
+          {{end}}
+          <td>
+            <form method="post" action="/admin/inbox/{{.ID}}/delete" data-confirm="Delete this email?">
+              <input type="hidden" name="_csrf" value="{{$csrf}}">
+              <button class="btn btn-small" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <div class="panel-body">
+    <p class="mb-0"><strong>No emails yet.</strong> Sign up through your app and the verification email shows up here within a few seconds.</p>
+  </div>
+  {{end}}
+</section>
+
+{{if .Items}}
+<form method="post" action="/admin/inbox/clear" class="mt-20" data-confirm="Delete all {{.Total}} emails?">
+  <input type="hidden" name="_csrf" value="{{$csrf}}">
+  <button class="btn" type="submit">Delete all ({{.Total}})</button>
+</form>
+{{end}}
+{{end}}{{end}}

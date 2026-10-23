@@ -1,0 +1,10 @@
+# HTTPS without owning a domain: <ip-with-dashes>.sslip.io resolves to the
+# server's IP, so Caddy can get a real Let's Encrypt certificate for it.
+# PUBLIC_HOST comes from .env (written by init.sh). Ports 80 and 443 must be
+# reachable from the internet for the certificate challenge.
+{$PUBLIC_HOST} {
+	encode zstd gzip
+	reverse_proxy warden:8080 {
+		header_up X-Forwarded-For {remote_host}
+	}
+}

@@ -21,6 +21,12 @@
 
 Warden validates most of this at startup and refuses to run with insecure settings.
 
+Just testing on a server, with no domain or SMTP provider? See [test-server.md](test-server.md).
+
+## Email delivery
+
+Production sends through an SMTP provider (`SMTP_HOST`, the default mode). `MAIL_DELIVERY=inbox` (emails shown in the admin UI, users receive nothing) and `MAIL_DELIVERY=direct` (sent from the server on port 25, usually spam-filtered) exist for tests. Production never falls back to them: they must be chosen explicitly, and inbox mode shows a warning banner in the admin UI.
+
 ## Domain and HTTPS
 
 Locally Warden runs on `http://localhost:8080`; that is what the callback URLs in the admin UI show. To go live:

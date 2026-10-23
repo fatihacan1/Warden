@@ -320,8 +320,11 @@ func (s *server) complete(vals map[string]string) []string {
 	if prev := s.previous["ENCRYPTION_ALGORITHM"]; prev != "" && prev != vals["ENCRYPTION_ALGORITHM"] {
 		notes = append(notes, "The algorithm changed. New data uses "+vals["ENCRYPTION_ALGORITHM"]+"; existing data stays readable. `warden reencrypt` converts it.")
 	}
-	if vals["SMTP_HOST"] == "" {
-		notes = append(notes, "SMTP is off: verification and reset emails are written to the log.")
+	switch vals["MAIL_DELIVERY"] {
+	case "inbox":
+		notes = append(notes, "Emails are not sent: they appear in the admin UI under Inbox. Use this for testing only, your users receive nothing.")
+	case "direct":
+		notes = append(notes, "Emails are sent straight from this server. Outbound port 25 must be open and mail will likely land in spam. Run `warden mail-test you@example.com` to check.")
 	}
 	return notes
 }

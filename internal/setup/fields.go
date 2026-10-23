@@ -38,7 +38,7 @@ var sections = []section{
 	{ID: "instance", Title: "Instance", Lede: "Where this Warden runs and what users see.", Fields: []field{
 		{Key: "APP_ENV", Label: "Environment", Kind: "select", Default: "development", Options: []option{
 			{"development", "Development", "Local machine. Relaxed checks, readable logs."},
-			{"production", "Production", "Requires HTTPS, real secrets and SMTP. Refuses unsafe settings."},
+			{"production", "Production", "Requires HTTPS and real secrets. Refuses unsafe settings."},
 		}},
 		{Key: "HTTP_PUBLIC_URL", Label: "Public URL", Default: "http://localhost:8080",
 			Help: "How apps reach this instance. Also the token issuer and the base of OAuth callbacks. https://auth.yourapp.com in production."},
@@ -51,8 +51,13 @@ var sections = []section{
 	{ID: "redis", Title: "Redis", Lede: "Rate limits, one-time codes and the revocation list. Required.", Check: "redis", Fields: []field{
 		{Key: "REDIS_URL", Label: "Connection URL", Kind: "secret", Default: "redis://localhost:6379/0", Help: "redis://:password@host:6379/0, or rediss:// for TLS."},
 	}},
-	{ID: "email", Title: "Email (SMTP)", Lede: "Verification and password reset emails. Leave the host empty to write emails to the log (development only).", Check: "smtp", Fields: []field{
-		{Key: "SMTP_HOST", Label: "Host", Default: "localhost", Placeholder: "smtp.postmarkapp.com"},
+	{ID: "email", Title: "Email", Lede: "Verification and password reset emails. Pick how they leave Warden. The SMTP fields below only matter for SMTP.", Check: "smtp", Fields: []field{
+		{Key: "MAIL_DELIVERY", Label: "Delivery", Kind: "select", Default: "smtp", Options: []option{
+			{"smtp", "SMTP provider", "Postmark, SES, Resend, Mailgun or your own server. The right choice for real users."},
+			{"inbox", "Admin Inbox (testing)", "Nothing is sent. Emails are stored encrypted and shown in the admin UI under Inbox. No SMTP provider, no domain needed, but users receive nothing."},
+			{"direct", "Send from this server (testing)", "Warden delivers straight to the recipient's mail server on port 25. Needs no provider, but many hosts block port 25 and the mail usually lands in spam."},
+		}},
+		{Key: "SMTP_HOST", Label: "SMTP host", Default: "localhost", Placeholder: "smtp.postmarkapp.com"},
 		{Key: "SMTP_PORT", Label: "Port", Default: "1025", Help: "587 (STARTTLS) or 465 (TLS) for most providers; 1025 for Mailpit."},
 		{Key: "SMTP_USERNAME", Label: "Username"},
 		{Key: "SMTP_PASSWORD", Label: "Password", Kind: "secret"},
