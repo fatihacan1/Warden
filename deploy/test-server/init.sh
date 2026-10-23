@@ -73,16 +73,20 @@ APP_ENV=production
 LOG_FORMAT=json
 HTTP_PUBLIC_URL=https://${PUBLIC_HOST}
 HTTP_COOKIE_SECURE=true
-# Only the Caddy container (this Docker network) may set the client IP.
-HTTP_TRUSTED_PROXIES=172.28.0.0/24
+# Only the Caddy container (fixed address 172.28.0.10 in docker-compose.yml) may set the client IP.
+HTTP_TRUSTED_PROXIES=172.28.0.10/32
 
+# sslmode=disable is fine only because Postgres sits on the private compose network.
+# A remote or managed database needs sslmode=require.
 DATABASE_URL=postgres://warden:${pg_password}@postgres:5432/warden?sslmode=disable
 REDIS_URL=redis://redis:6379/0
 RABBITMQ_URL=
 
 ENCRYPTION_KEY=$(rand_b64)
 ADMIN_TOKEN=$(rand_token)
-# The admin UI is reached through an SSH tunnel over plain http://localhost.
+# Acceptable only because docker-compose.yml binds the admin port to 127.0.0.1 and
+# you reach it through an SSH tunnel over plain http://localhost. If you ever
+# expose the admin UI over the network, serve it over HTTPS and set this to true.
 ADMIN_COOKIE_SECURE=false
 
 # No SMTP provider needed: emails are stored encrypted and shown in the admin

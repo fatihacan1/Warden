@@ -59,9 +59,10 @@ Your app talks to `https://<ip-with-dashes>.sslip.io` (the token issuer, `/v1/..
 - **sslip.io is a third-party DNS service.** It answers `203-0-113-10.sslip.io` with `203.0.113.10`. If it goes down or is hijacked, your name stops working or points elsewhere. Fine for tests.
 - **The certificate is public.** Let's Encrypt logs every certificate in public Certificate Transparency logs, so the host name (which contains your IP) is discoverable. Do not treat the address as secret.
 - **Users get no email in inbox mode.** Do not put real users on it. Anyone with the admin token can read every email, including reset links.
-- **Admin stays private.** The UI is bound to localhost and reached through SSH. Do not publish port 9090, and keep the admin token secret.
+- **Admin stays private.** The UI is bound to localhost and reached through SSH. That is the only reason `ADMIN_COOKIE_SECURE=false` is acceptable here; if you expose the admin UI any other way, serve it over HTTPS and set it to `true`. Do not publish port 9090, and keep the admin token secret.
 - **Rate limits and lockouts** stay on, as in production. Sign-in and sign-up attempts per IP are limited.
-- **Production checks still run.** Warden refuses to start with weak settings: HTTPS URL, secure cookies, generated secrets, and only the Caddy container may set client IPs (`HTTP_TRUSTED_PROXIES=172.28.0.0/24`).
+- **Production checks still run.** Warden refuses to start with weak settings: HTTPS URL, secure cookies, generated secrets, and only the Caddy container (fixed address 172.28.0.10) may set client IPs (`HTTP_TRUSTED_PROXIES=172.28.0.10/32`).
+- **Database TLS.** `DATABASE_URL` uses `sslmode=disable` only because Postgres runs on the private compose network. A remote or managed database needs `sslmode=require`.
 - **Back up `.env`.** `ENCRYPTION_KEY` protects signing keys and the Inbox. Lose it and that data is unreadable.
 
 Firewall with ufw (allow SSH first or you lock yourself out):

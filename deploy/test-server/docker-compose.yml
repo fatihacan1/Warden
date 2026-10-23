@@ -24,6 +24,9 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    networks:
+      default:
+        ipv4_address: 172.28.0.10
     depends_on: [warden]
     restart: unless-stopped
 
@@ -73,7 +76,8 @@ services:
       retries: 20
     restart: unless-stopped
 
-# Warden trusts X-Forwarded-For only from this network (the Caddy container).
+# Warden trusts X-Forwarded-For only from the Caddy container, which has a fixed
+# address on this network (172.28.0.10). Other containers cannot spoof client IPs.
 networks:
   default:
     ipam:
