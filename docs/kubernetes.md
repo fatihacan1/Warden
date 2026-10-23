@@ -6,6 +6,7 @@ Manifests live in [deploy/kubernetes](../deploy/kubernetes) and use plain Kustom
 deploy/kubernetes/
   base/                 Namespace, Deployment, Services, PDB, HPA, NetworkPolicies, Ingress
   components/monitoring ServiceMonitor + PrometheusRule (Prometheus Operator)
+  components/direct-mail optional egress on port 25 (off by default)
   components/grpc       warden-grpc Service + NetworkPolicy, turns on GRPC_ENABLED
   overlays/dev          1 replica, in-cluster Postgres/Redis/Mailpit, no TLS (kind)
   overlays/production   3 replicas, external Postgres/Redis, TLS ingress, monitoring
@@ -98,7 +99,8 @@ The dev overlay's Postgres and Redis have no backups and no high availability. T
 7. **Network policy labels.** Base policies assume the ingress controller runs in a namespace named `ingress-nginx` and Prometheus in `monitoring`. If yours differ, edit the `kubernetes.io/metadata.name` values in `base/networkpolicy.yaml`.
 8. **Monitoring.** The `monitoring` component needs the Prometheus Operator CRDs. If your Prometheus only selects resources with a release label, add it to the two resources. Alert rules are copied from `deploy/prometheus/alerts.yml`; keep them in sync.
 9. **gRPC.** Uncomment `components/grpc` only if other services call Warden over gRPC; add `GRPC_API_KEYS` to the secrets, then label client pods `warden-grpc-client=true`.
-10. **Check the render before applying.** `kubectl kustomize deploy/kubernetes/overlays/production | kubeconform -strict -ignore-missing-schemas`.
+10. **Direct mail.** Port 25 egress is closed by default. Add `../../components/direct-mail` to the overlay's `components:` only if Warden must deliver mail to MX servers itself.
+11. **Check the render before applying.** `kubectl kustomize deploy/kubernetes/overlays/production | kubeconform -strict -ignore-missing-schemas`.
 
 ### Secrets in real clusters
 
@@ -119,7 +121,8 @@ If you keep `secretGenerator`, Kustomize appends a content hash to the Secret na
 | `warden-allow-public-http` | Port 8080 only from the ingress controller namespace |
 | `warden-allow-admin` | Port 9090 only from pods labeled `warden-admin-access: "true"` and from the `monitoring` namespace |
 | `warden-allow-grpc` (grpc component) | Port 9091 only from pods labeled `warden-grpc-client: "true"` |
-| `warden-allow-egress-internet` | TCP 443 and SMTP ports to public addresses only (private ranges and `169.254.0.0/16` excluded) |
+| `warden-allow-egress-internet` | TCP 443 and SMTP relay ports (465, 587, 2525) to public addresses only (RFC 1918, link-local `169.254.0.0/16`, CGNAT `100.64.0.0/10`, `192.0.0.0/24` and `198.18.0.0/15` excluded) |
+| `warden-allow-egress-smtp-25` (direct-mail component) | Optional. TCP 25 to public addresses, only for delivering straight to recipients' MX servers; leave off when you use an SMTP relay |
 | `warden-allow-egress-datastores` (production) | Postgres/Redis by CIDR; replace the placeholders |
 | dev overlay policies | Egress to the in-cluster Postgres, Redis and Mailpit by pod selector |
 

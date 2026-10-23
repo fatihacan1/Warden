@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# Opt-in: lets Warden open outbound SMTP on port 25 to public addresses, for
+# delivering mail directly to recipients' MX servers. Most setups use an SMTP
+# relay on 465/587/2525 and should NOT enable this.
+resources:
+  - networkpolicy.yaml

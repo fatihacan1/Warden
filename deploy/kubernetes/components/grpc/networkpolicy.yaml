@@ -16,3 +16,21 @@ spec:
               warden-grpc-client: "true"
       ports:
         - { protocol: TCP, port: 9091 }
+---
+# Egress half: default-deny-all also blocks the client pod's outgoing traffic.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: warden-grpc-client-egress
+spec:
+  podSelector:
+    matchLabels:
+      warden-grpc-client: "true"
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: warden
+      ports:
+        - { protocol: TCP, port: 9091 }

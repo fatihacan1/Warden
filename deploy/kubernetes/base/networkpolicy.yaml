@@ -79,7 +79,7 @@ spec:
   policyTypes: [Egress]
   egress:
     # HTTPS for OAuth providers, S3, Have I Been Pwned, webhooks and Sentry,
-    # plus the usual SMTP ports. Private ranges and the cloud metadata address
+    # plus SMTP relay ports (465, 587, 2525; port 25 is in components/direct-mail). Private ranges and the cloud metadata address
     # are excluded on purpose; datastores get their own rules in the overlays.
     - to:
         - ipBlock:
@@ -89,9 +89,30 @@ spec:
               - 172.16.0.0/12
               - 192.168.0.0/16
               - 169.254.0.0/16
+              - 100.64.0.0/10   # CGNAT / shared address space
+              - 192.0.0.0/24    # IETF protocol assignments
+              - 198.18.0.0/15   # benchmarking
       ports:
         - { protocol: TCP, port: 443 }
-        - { protocol: TCP, port: 25 }
         - { protocol: TCP, port: 465 }
         - { protocol: TCP, port: 587 }
         - { protocol: TCP, port: 2525 }
+---
+# Egress half of warden-allow-admin: default-deny-all also blocks the outgoing
+# traffic of the jump pod itself, so labeled pods need this to reach 9090.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: warden-admin-client-egress
+spec:
+  podSelector:
+    matchLabels:
+      warden-admin-access: "true"
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: warden
+      ports:
+        - { protocol: TCP, port: 9090 }
