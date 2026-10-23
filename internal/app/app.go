@@ -160,10 +160,8 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 		a.Close()
 		return nil, err
 	}
-	var sender mailer.Sender = mailer.NewLog(log)
-	if cfg.SMTP.Host != "" {
-		sender = mailer.NewSMTP(cfg.SMTP)
-	}
+	sender := mailer.NewSender(cfg, a.Store, box, log)
+	log.Info("mail delivery", "mode", cfg.MailDelivery())
 	a.Relay = events.NewRelay(a.Store, publisher, sender, renderer, box, log, a.Metrics).WithWebhooks(a.Webhooks)
 
 	a.OAuth = oauth.NewRegistry(cfg.OAuth, cfg.HTTP.PublicURL, a.Store, box, oauth.NewHTTPClient(), log)
@@ -200,7 +198,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 		Config: cfg, Auth: a.Auth, Store: a.Store, Redis: a.Redis, OAuth: a.OAuth, Keys: a.Keys,
 		Limiter: limiter, Metrics: a.Metrics, Log: log, Ready: ready, Events: publisher != nil, Settings: a.Settings,
 		APIKeys: a.APIKeys, Webhooks: a.Webhooks, Mail: a.Mail, Renderer: renderer, Sender: sender,
-		AccessTokens: accesstokens.NewManager(a.Store, log),
+		AccessTokens: accesstokens.NewManager(a.Store, log), Box: box,
 	}); err != nil {
 		a.Close()
 		return nil, err
@@ -313,7 +311,11 @@ func (a *App) cleanupLoop(ctx context.Context) {
 			if _, err := a.Store.DeleteDeadAccessTokens(ctx, now.Add(-30*24*time.Hour)); err != nil {
 				return err
 			}
-			a.Log.Info("cleanup finished", "sessions", s, "outbox", o, "audit", au, "devices", d)
+			in, err := a.Store.PruneInbox(ctx, a.Config.Mail.InboxMax, now.Add(-mailer.InboxRetention))
+			if err != nil {
+				return err
+			}
+			a.Log.Info("cleanup finished", "sessions", s, "outbox", o, "audit", au, "devices", d, "inbox", in)
 			return nil
 		})
 		if err != nil && ctx.Err() == nil {

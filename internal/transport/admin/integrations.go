@@ -331,7 +331,7 @@ func (s *Server) emailsPage(c fiber.Ctx) error {
 		rows = append(rows, emailRow{Info: t, Langs: s.emailLangs(t.Name)})
 	}
 	return s.render(c, fiber.StatusOK, "emails", "emails", "Emails", map[string]any{
-		"Templates": rows, "SMTP": s.Config.SMTP.Host != "", "From": s.Config.SMTP.From,
+		"Templates": rows, "Mode": s.Config.MailDelivery(), "From": s.Config.SMTP.From,
 		"Default": i18n.Lookup(s.Renderer.Locale("")), "Locales": i18n.Locales,
 	})
 }
@@ -369,7 +369,7 @@ func (s *Server) emailPage(c fiber.Ctx) error {
 	src, _ := s.Renderer.Effective(info.Name, loc)
 	_, custom := s.Mail.Override(info.Name, loc)
 	return s.render(c, fiber.StatusOK, "email", "emails", info.Title, map[string]any{
-		"Info": info, "Src": src, "Custom": custom, "Layout": info.Name == mailer.LayoutName, "SMTP": s.Config.SMTP.Host != "",
+		"Info": info, "Src": src, "Custom": custom, "Layout": info.Name == mailer.LayoutName, "Mode": s.Config.MailDelivery(),
 		"Lang": i18n.Lookup(loc), "Langs": s.emailLangs(info.Name),
 	})
 }

@@ -97,6 +97,8 @@ curl -s localhost:8080/v1/auth/signup -H 'Content-Type: application/json' \
 curl -s localhost:8080/v1/me -H "Authorization: Bearer <access_token from the response>"
 ```
 
+**On a server, without a domain or SMTP provider:** [docs/test-server.md](docs/test-server.md) sets up HTTPS on a free `sslip.io` address and an admin Inbox for emails in one command.
+
 Prefer a guided setup? `go run ./cmd/warden setup` opens a local page that tests each connection, generates secrets and writes `.env` for you.
 
 The values in `.env.example` are public development defaults. Warden refuses to start with them when `APP_ENV=production`; generate your own with `docker compose run --rm --no-deps warden keygen` or `go run ./cmd/warden keygen`.

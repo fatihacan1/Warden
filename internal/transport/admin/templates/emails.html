@@ -4,7 +4,10 @@
     <h1>Emails</h1>
     <p class="lede">Every email Warden sends, in every language. Edit the wording and design, preview it with sample data, send yourself a test. Saved templates apply to all replicas within 15 seconds.</p>
   </div>
-  {{if .SMTP}}<span class="tag tag-ok">Sending as {{.From}}</span>{{else}}<span class="tag tag-warn">SMTP off: emails go to the log</span>{{end}}
+  {{if eq .Mode "smtp"}}<span class="tag tag-ok">SMTP: sending as {{.From}}</span>
+  {{else if eq .Mode "direct"}}<span class="tag tag-warn">Direct delivery from this server (may land in spam)</span>
+  {{else if eq .Mode "inbox"}}<a class="tag tag-warn" href="/admin/inbox">Test mode: emails go to the Inbox, nobody receives them</a>
+  {{else}}<span class="tag tag-warn">Emails go to the log</span>{{end}}
 </div>
 
 <p class="help">Each user gets emails in their own language; users without one get the default, <strong>{{flag .Default.Code}} {{.Default.Name}}</strong> (change it in <a href="/admin/settings">Settings</a>).</p>

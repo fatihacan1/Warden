@@ -32,6 +32,7 @@ import (
 	"github.com/fatihacan1/warden/internal/auth"
 	"github.com/fatihacan1/warden/internal/config"
 	"github.com/fatihacan1/warden/internal/crypto/randtoken"
+	"github.com/fatihacan1/warden/internal/crypto/secretbox"
 	"github.com/fatihacan1/warden/internal/domain"
 	"github.com/fatihacan1/warden/internal/i18n"
 	"github.com/fatihacan1/warden/internal/mailer"
@@ -66,6 +67,7 @@ type Deps struct {
 	Mail     *mailer.Library
 	Renderer *mailer.Renderer
 	Sender   mailer.Sender
+	Box      *secretbox.Box
 
 	AccessTokens *accesstokens.Manager
 }
@@ -217,6 +219,12 @@ func (s *Server) routes() {
 	g.Post("/emails/:name/preview", s.originCheck, s.csrf, s.previewEmail)
 	g.Post("/emails/:name/test", s.originCheck, s.csrf, s.testEmail)
 
+	g.Get("/inbox", s.inboxPage)
+	g.Post("/inbox/clear", s.originCheck, s.csrf, s.clearInbox)
+	g.Get("/inbox/:id", s.inboxMessagePage)
+	g.Get("/inbox/:id/preview", s.inboxPreview)
+	g.Post("/inbox/:id/delete", s.originCheck, s.csrf, s.deleteInboxMessage)
+
 	g.Get("/access-tokens", s.accessTokensPage)
 	g.Post("/access-tokens", s.originCheck, s.csrf, s.createAccessToken)
 	g.Post("/access-tokens/:id/revoke", s.originCheck, s.csrf, s.revokeAccessToken)
@@ -333,7 +341,10 @@ type view struct {
 	Version string
 	Env     string
 	Assets  string
-	Data    any
+	// MailInbox is true while emails are kept in the Inbox instead of being
+	// sent; the layout then shows a banner on every page.
+	MailInbox bool
+	Data      any
 }
 
 func (s *Server) render(c fiber.Ctx, status int, page, nav, title string, data any) error {
@@ -342,7 +353,7 @@ func (s *Server) render(c fiber.Ctx, status int, page, nav, title string, data a
 		return errors.New("admin: unknown page " + page)
 	}
 	v := view{Title: title, Nav: nav, Data: data, Version: observability.Version, Env: s.Config.Env, Assets: s.assets,
-		Flash: flashes[c.Query("ok")], Error: takeFlashError(c)}
+		MailInbox: s.Config.MailDelivery() == config.MailInbox, Flash: flashes[c.Query("ok")], Error: takeFlashError(c)}
 	if sess, ok := c.Locals("admin_session").(*adminSession); ok {
 		v.CSRF = sess.CSRF
 	}
@@ -372,6 +383,8 @@ var flashes = map[string]string{
 	"settings":       "Settings saved. They apply to every replica within 15 seconds.",
 	"settingsip":     "Settings saved. Your current address was added to the admin allowlist so you stay signed in.",
 	"locale":         "Email language updated.",
+	"inboxdeleted":   "Email deleted from the Inbox.",
+	"inboxcleared":   "Inbox emptied.",
 	"envreset":       "Admin overrides removed. Environment values apply again.",
 }
 

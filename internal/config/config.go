@@ -43,6 +43,7 @@ type Config struct {
 	Redis     RedisConfig     `envPrefix:"REDIS_"`
 	S3        S3Config        `envPrefix:"S3_"`
 	RabbitMQ  RabbitMQConfig  `envPrefix:"RABBITMQ_"`
+	Mail      MailConfig      `envPrefix:"MAIL_"`
 	SMTP      SMTPConfig      `envPrefix:"SMTP_"`
 	Token     TokenConfig     `envPrefix:"TOKEN_"`
 	Auth      AuthConfig      `envPrefix:"AUTH_"`
@@ -292,6 +293,7 @@ func LoadFrom(vars map[string]string) (*Config, error) {
 
 func (c *Config) normalize() {
 	c.HTTP.PublicURL = strings.TrimRight(c.HTTP.PublicURL, "/")
+	c.Mail.Delivery = strings.ToLower(strings.TrimSpace(c.Mail.Delivery))
 	if c.Token.Issuer == "" {
 		c.Token.Issuer = c.HTTP.PublicURL
 	}
@@ -449,8 +451,21 @@ func (c *Config) Validate() error {
 	if c.S3.AvatarMaxBytes < 1024 || c.S3.AvatarMaxBytes > 20<<20 {
 		add("S3_AVATAR_MAX_BYTES must be between 1KiB and 20MiB")
 	}
-	if c.IsProduction() && c.SMTP.Host == "" {
-		add("SMTP_HOST is required in production (emails would only be logged)")
+	switch mode := c.MailDelivery(); mode {
+	case MailSMTP:
+		if c.SMTP.Host == "" {
+			add("SMTP_HOST is required for MAIL_DELIVERY=smtp (or set MAIL_DELIVERY=inbox for a test server, direct to send without a relay)")
+		}
+	case MailInbox, MailDirect:
+	case MailLog:
+		if c.IsProduction() {
+			add("MAIL_DELIVERY=log is not allowed in production: emails would be written to the log. Use smtp, direct or inbox")
+		}
+	default:
+		add("MAIL_DELIVERY must be smtp, inbox, direct or log (got %q)", mode)
+	}
+	if c.Mail.InboxMax < 10 || c.Mail.InboxMax > 10000 {
+		add("MAIL_INBOX_MAX must be between 10 and 10000")
 	}
 	switch c.SMTP.TLSPolicy {
 	case "mandatory", "opportunistic", "none":

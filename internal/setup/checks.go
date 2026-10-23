@@ -88,8 +88,14 @@ func check(ctx context.Context, kind string, v map[string]string) (string, error
 		return "Bucket " + cfg.Bucket + " is reachable.", nil
 
 	case "smtp":
+		switch v["MAIL_DELIVERY"] {
+		case "inbox":
+			return "Nothing to test: emails are kept in the admin Inbox.", nil
+		case "direct":
+			return "Nothing to test here. After starting Warden run `warden mail-test you@example.com` to check direct delivery.", nil
+		}
 		if v["SMTP_HOST"] == "" {
-			return "SMTP is off: emails are written to the log (development only).", nil
+			return "", errors.New("enter the SMTP host, or pick another delivery mode")
 		}
 		port, err := strconv.Atoi(v["SMTP_PORT"])
 		if err != nil {

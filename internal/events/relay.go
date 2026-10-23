@@ -193,7 +193,12 @@ func (r *Relay) dispatch(ctx context.Context, m store.OutboxMessage, isEmail boo
 	if err != nil {
 		return permanentError{err}
 	}
-	return r.sender.Send(ctx, msg)
+	err = r.sender.Send(ctx, msg)
+	var pe interface{ Permanent() bool }
+	if err != nil && errors.As(err, &pe) && pe.Permanent() {
+		return permanentError{err} // the recipient's server refused it for good
+	}
+	return err
 }
 
 func (r *Relay) count(kind, result string) {

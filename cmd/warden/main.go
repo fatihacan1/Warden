@@ -6,6 +6,7 @@
 //	warden migrate status   show migration status
 //	warden reencrypt        re-encrypt stored secrets with the current ENCRYPTION_KEY
 //	warden mcp              MCP server (stdio) for AI agents, using an access token
+//	warden mail-test ADDR   send a test email with the current mail settings and print diagnostics
 //	warden keygen           print fresh random secrets for .env
 //	warden healthcheck      exit 0 if the local HTTP server is healthy (Docker HEALTHCHECK)
 //	warden version          print the version
@@ -55,6 +56,8 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+	case "mail-test":
+		mailTest(os.Args[2:])
 	case "keygen":
 		keygen()
 	case "healthcheck":
@@ -62,7 +65,7 @@ func main() {
 	case "version", "--version", "-v":
 		fmt.Println(observability.Version)
 	case "help", "--help", "-h":
-		fmt.Println("usage: warden [serve|setup|migrate [status]|reencrypt|mcp|keygen|healthcheck|version]")
+		fmt.Println("usage: warden [serve|setup|migrate [status]|reencrypt|mcp|mail-test|keygen|healthcheck|version]")
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
 		os.Exit(2)
