@@ -227,7 +227,7 @@ func parseID(s string) (uuid.UUID, error) {
 // RPCs
 
 func (s *Server) VerifyAccessToken(ctx context.Context, req *wardenv1.VerifyAccessTokenRequest) (*wardenv1.VerifyAccessTokenResponse, error) {
-	claims, err := s.tokens.Verify(req.GetAccessToken())
+	claims, err := s.tokens.VerifyAny(req.GetAccessToken())
 	if err != nil {
 		return &wardenv1.VerifyAccessTokenResponse{Valid: false, Reason: "invalid_token"}, nil
 	}

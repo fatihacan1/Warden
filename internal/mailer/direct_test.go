@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/netip"
 	"strings"
 	"sync"
 	"testing"
@@ -242,6 +243,19 @@ func TestDirectFromReplacesPlaceholderDomain(t *testing.T) {
 	} {
 		if got := DirectFrom(in, "auth.example.org"); got != want {
 			t.Errorf("%q: got %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestPublicAddr(t *testing.T) {
+	for addr, want := range map[string]bool{
+		"8.8.8.8": true, "2a00:1450::1": true, "64:ff9b::808:808": true,
+		"10.0.0.1": false, "127.0.0.1": false, "100.64.1.1": false, "192.0.0.8": false,
+		"198.18.0.1": false, "203.0.113.5": false, "240.0.0.1": false, "::1": false,
+		"64:ff9b::a00:1": false, "2002:a00:1::1": false, "::ffff:10.0.0.1": false, "2001:db8::1": false,
+	} {
+		if got := publicAddr(netip.MustParseAddr(addr)); got != want {
+			t.Errorf("publicAddr(%s) = %v, want %v", addr, got, want)
 		}
 	}
 }

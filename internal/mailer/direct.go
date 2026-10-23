@@ -190,7 +190,43 @@ func (d *Direct) deliver(ctx context.Context, host string, msg *gomail.Msg) erro
 	return err
 }
 
-var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+// nonPublic are special-purpose ranges the stdlib predicates do not cover.
+var nonPublic = []netip.Prefix{
+	netip.MustParsePrefix("100.64.0.0/10"),   // CGNAT
+	netip.MustParsePrefix("192.0.0.0/24"),    // IETF protocol assignments
+	netip.MustParsePrefix("192.0.2.0/24"),    // documentation
+	netip.MustParsePrefix("198.18.0.0/15"),   // benchmarking
+	netip.MustParsePrefix("198.51.100.0/24"), // documentation
+	netip.MustParsePrefix("203.0.113.0/24"),  // documentation
+	netip.MustParsePrefix("240.0.0.0/4"),     // reserved
+	netip.MustParsePrefix("2001:db8::/32"),   // documentation
+}
+
+var (
+	nat64  = netip.MustParsePrefix("64:ff9b::/96")
+	sixTo4 = netip.MustParsePrefix("2002::/16")
+)
+
+func publicAddr(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	if !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+		return false
+	}
+	for _, p := range nonPublic {
+		if p.Contains(ip) {
+			return false
+		}
+	}
+	// IPv6 forms that embed an IPv4 address: judge the embedded address.
+	b := ip.As16()
+	if nat64.Contains(ip) {
+		return publicAddr(netip.AddrFrom4([4]byte{b[12], b[13], b[14], b[15]}))
+	}
+	if sixTo4.Contains(ip) {
+		return publicAddr(netip.AddrFrom4([4]byte{b[2], b[3], b[4], b[5]}))
+	}
+	return true
+}
 
 // publicOnly is a net.Dialer control that refuses loopback, private,
 // link-local and other non-public destinations.
@@ -199,9 +235,8 @@ func publicOnly(_, address string, _ syscall.RawConn) error {
 	if err != nil {
 		return fmt.Errorf("mailer: unexpected address %q", address)
 	}
-	ip := ap.Addr().Unmap()
-	if !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || cgnat.Contains(ip) {
-		return fmt.Errorf("mailer: refusing to connect to non-public address %s", ip)
+	if ip := ap.Addr(); !publicAddr(ip) {
+		return fmt.Errorf("mailer: refusing to connect to non-public address %s", ip.Unmap())
 	}
 	return nil
 }

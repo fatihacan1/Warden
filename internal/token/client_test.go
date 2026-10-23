@@ -17,7 +17,7 @@ func TestClientTokens(t *testing.T) {
 	if time.Until(exp) > 10*time.Minute {
 		t.Fatalf("exp %v", exp)
 	}
-	claims, err := iss.Verify(raw)
+	claims, err := iss.VerifyAny(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,6 +29,9 @@ func TestClientTokens(t *testing.T) {
 	}
 	if _, err := claims.UserID(); err == nil {
 		t.Fatal("client subject must not parse as a user id")
+	}
+	if _, err := iss.Verify(raw); err == nil {
+		t.Fatal("Verify must reject service tokens")
 	}
 	// A user token is not a machine token.
 	user, _, _ := iss.Issue(subject())

@@ -224,7 +224,7 @@ func (s *Server) serverVerifyToken(c fiber.Ctx) error {
 		return err
 	}
 	inactive := func(reason string) error { return c.JSON(fiber.Map{"active": false, "reason": reason}) }
-	claims, err := s.tokens.Verify(in.Token)
+	claims, err := s.tokens.VerifyAny(in.Token)
 	if err != nil {
 		return inactive("invalid_token")
 	}

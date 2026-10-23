@@ -159,8 +159,20 @@ func (i *Issuer) IssueClient(s ClientSubject) (string, time.Time, error) {
 // ErrInvalid is returned for any token that fails verification.
 var ErrInvalid = errors.New("token: invalid")
 
-// Verify parses and fully validates an access token.
+// Verify parses and fully validates a user access token. Service (machine)
+// tokens are rejected: they are minted for other resource servers, not for
+// this instance's own APIs.
 func (i *Issuer) Verify(raw string) (*Claims, error) {
+	return i.verify(raw, false)
+}
+
+// VerifyAny also accepts service tokens, whatever their audience. Use it only
+// for introspection, where the caller checks the audience itself.
+func (i *Issuer) VerifyAny(raw string) (*Claims, error) {
+	return i.verify(raw, true)
+}
+
+func (i *Issuer) verify(raw string, allowMachine bool) (*Claims, error) {
 	var claims Claims
 	parser := jwt.NewParser(
 		jwt.WithValidMethods([]string{jwt.SigningMethodES256.Alg()}),
@@ -185,6 +197,9 @@ func (i *Issuer) Verify(raw string) (*Claims, error) {
 		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
 	if claims.IsMachine() {
+		if !allowMachine {
+			return nil, fmt.Errorf("%w: service token", ErrInvalid)
+		}
 		// Machine tokens are minted for the services named in "aud", which
 		// are not necessarily this instance's own audience: each resource
 		// server checks its own. Verify only requires one to be present.

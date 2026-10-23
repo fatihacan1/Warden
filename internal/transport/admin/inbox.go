@@ -93,7 +93,7 @@ func (s *Server) inboxPreview(c fiber.Ctx) error {
 	// Same sandbox as the template preview, and stricter: no remote content at
 	// all except images, no scripts, forms or same-origin access.
 	c.Set("X-Frame-Options", "SAMEORIGIN")
-	c.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; frame-ancestors 'self'; sandbox")
+	c.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:; frame-ancestors 'self'; sandbox")
 	c.Type("html", "utf-8")
 	if c.Query("view") == "text" {
 		return c.SendString(`<pre style="font:13px/1.5 ui-monospace,monospace;white-space:pre-wrap;padding:16px;margin:0">Subject: ` +
