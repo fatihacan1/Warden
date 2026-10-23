@@ -67,7 +67,9 @@ Requirements: Docker Desktop (or Docker Engine with Compose v2). Go 1.26+ only f
 
 **Guided:** `go run ./cmd/warden setup` (or `make setup`) prints a link to a local page that walks you through each connection, tests it, generates secrets and writes `.env`. Then `docker compose up -d --build`.
 
-<p align="center"><img src="docs/images/admin-setup-onboarding.png" alt="Setup onboarding: one connection per step, tested before you continue" width="720"></p>
+| 1. Welcome | 2. Each connection tested | 3. Review, then write `.env` |
+| --- | --- | --- |
+| ![Setup welcome](docs/images/setup-welcome.png) | ![Setup step: PostgreSQL connected](docs/images/admin-setup-onboarding.png) | ![Setup review](docs/images/setup-review.png) |
 
 **Manual:**
 
@@ -148,6 +150,8 @@ The admin UI is how you configure an instance: switch features and providers on 
 | ![API docs with working examples](docs/images/admin-docs.png) | ![Webhooks](docs/images/admin-webhooks.png) |
 | **API keys** | **Settings** |
 | ![API keys](docs/images/admin-api-keys.png) | ![Settings](docs/images/admin-settings.png) |
+| **Access tokens (AI agents)** | **Emails** |
+| ![Access tokens](docs/images/admin-access-tokens.png) | ![Email editor](docs/images/admin-emails.png) |
 
 - **Settings**: sign-ups, email verification, breached password check, password length, lockout, app name, email links, redirect URIs, CORS origins, publishable key enforcement, default email language, security notifications, admin IP allowlist. Applied to every replica within 15 seconds.
 - **Sign-in providers**: enable Google, Apple, GitHub or Discord and paste their credentials. The page shows the exact callback URL to register with each provider. Secrets are encrypted at rest and never displayed again.
