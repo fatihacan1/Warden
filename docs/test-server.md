@@ -45,7 +45,7 @@ Sign up through your app, open Inbox, click the verification link. Emails are ke
 
 | Setting | Result |
 | --- | --- |
-| `MAIL_DELIVERY=direct` | Warden sends straight to the recipient's mail server on port 25, like Dokploy does. Works only if your host allows outbound port 25 (most clouds block it) and the mail will probably land in spam without SPF, DKIM and reverse DNS. Check what happens with `docker compose exec warden /warden mail-test you@example.com` |
+| `MAIL_DELIVERY=direct` | Warden sends straight to the recipient's mail server on port 25, like Dokploy does. Works only if your host allows outbound port 25 (most clouds block it) and the mail will probably land in spam without SPF, DKIM and reverse DNS. Check what happens with `docker compose exec warden /warden mail-test your-real-address@gmail.com` (example.com has a null MX and always fails) |
 | `MAIL_DELIVERY=smtp` plus `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` | Any SMTP provider. The reliable choice |
 
 The inbox keeps working only in `inbox` mode. Switching to `direct` or `smtp` stops new emails from landing there.
