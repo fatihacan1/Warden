@@ -29,6 +29,10 @@ func (s *Server) publishableKey() fiber.Handler {
 		if strings.HasPrefix(p, "/v1/server/") || p == "/v1/server" || strings.HasSuffix(p, "/callback") {
 			return c.Next()
 		}
+		// Services using client credentials authenticate with their secret.
+		if p == "/v1/oauth/token" && isClientCredentials(c) {
+			return c.Next()
+		}
 		raw := c.Get("X-Warden-Key")
 		if raw == "" && strings.HasSuffix(p, "/authorize") {
 			raw = c.Query("client_key") // browser navigation: no custom headers
@@ -223,6 +227,16 @@ func (s *Server) serverVerifyToken(c fiber.Ctx) error {
 	claims, err := s.tokens.Verify(in.Token)
 	if err != nil {
 		return inactive("invalid_token")
+	}
+	if claims.IsMachine() {
+		view, ok, err := s.serviceTokenView(c.Context(), claims)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return inactive("client_revoked")
+		}
+		return c.JSON(view)
 	}
 	uid, err1 := claims.UserID()
 	sid, err2 := claims.SID()

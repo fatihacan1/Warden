@@ -36,6 +36,7 @@ import (
 	"github.com/fatihacan1/warden/internal/i18n"
 	"github.com/fatihacan1/warden/internal/mailer"
 	"github.com/fatihacan1/warden/internal/oauth"
+	"github.com/fatihacan1/warden/internal/oauthclients"
 	"github.com/fatihacan1/warden/internal/observability"
 	"github.com/fatihacan1/warden/internal/ratelimit"
 	"github.com/fatihacan1/warden/internal/settings"
@@ -68,6 +69,7 @@ type Deps struct {
 	Sender   mailer.Sender
 
 	AccessTokens *accesstokens.Manager
+	Clients      *oauthclients.Manager
 }
 
 type Server struct {
@@ -221,6 +223,11 @@ func (s *Server) routes() {
 	g.Post("/access-tokens", s.originCheck, s.csrf, s.createAccessToken)
 	g.Post("/access-tokens/:id/revoke", s.originCheck, s.csrf, s.revokeAccessToken)
 
+	g.Get("/service-clients", s.serviceClientsPage)
+	g.Post("/service-clients", s.originCheck, s.csrf, s.createServiceClient)
+	g.Post("/service-clients/:id/rotate", s.originCheck, s.csrf, s.rotateServiceClient)
+	g.Post("/service-clients/:id/revoke", s.originCheck, s.csrf, s.revokeServiceClient)
+
 	g.Get("/docs", s.docsPage)
 	g.Get("/openapi.yaml", s.openAPI)
 }
@@ -362,6 +369,7 @@ var flashes = map[string]string{
 	"signedout":      "Signed out.",
 	"keysaved":       "API key updated.",
 	"tokenrevoked":   "Access token revoked. Requests with it are rejected immediately.",
+	"clientrevoked":  "Service client revoked. It can no longer get tokens; tokens already issued expire on their own.",
 	"keyrevoked":     "API key revoked. Requests using it are rejected immediately.",
 	"webhooktest":    "Test event queued. It appears in the deliveries below within a few seconds.",
 	"webhookdeleted": "Webhook deleted.",

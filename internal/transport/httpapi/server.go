@@ -18,6 +18,7 @@ import (
 	"github.com/fatihacan1/warden/internal/auth"
 	"github.com/fatihacan1/warden/internal/config"
 	"github.com/fatihacan1/warden/internal/oauth"
+	"github.com/fatihacan1/warden/internal/oauthclients"
 	"github.com/fatihacan1/warden/internal/observability"
 	"github.com/fatihacan1/warden/internal/ratelimit"
 	"github.com/fatihacan1/warden/internal/settings"
@@ -40,6 +41,7 @@ type Deps struct {
 	Ready    Readiness
 	Settings *settings.Manager
 	APIKeys  *apikeys.Manager
+	Clients  *oauthclients.Manager
 }
 
 type Server struct {
@@ -55,6 +57,7 @@ type Server struct {
 	ready    Readiness
 	settings *settings.Manager
 	apiKeys  *apikeys.Manager
+	clients  *oauthclients.Manager
 	gql      *graphql.Schema
 }
 
@@ -64,7 +67,7 @@ const maxJSONBody = 64 << 10
 func New(d Deps) (*Server, error) {
 	s := &Server{
 		cfg: d.Config, auth: d.Auth, tokens: d.Tokens, keys: d.Keys, oauth: d.OAuth,
-		limiter: d.Limiter, metrics: d.Metrics, log: d.Log, ready: d.Ready, settings: d.Settings, apiKeys: d.APIKeys,
+		limiter: d.Limiter, metrics: d.Metrics, log: d.Log, ready: d.Ready, settings: d.Settings, apiKeys: d.APIKeys, clients: d.Clients,
 	}
 	if d.Config.GraphQL.Enabled {
 		if err := s.buildGraphQL(); err != nil {
@@ -124,7 +127,8 @@ func (s *Server) routes() {
 	a.Get("/.well-known/openid-configuration", s.discovery)
 
 	global := s.rateLimit(ratelimit.Per("ip_global", cfg.RateLimit.GlobalPerMinute, time.Minute))
-	strict := s.rateLimit(ratelimit.Per("ip_auth", cfg.RateLimit.AuthPerMinute, time.Minute))
+	strictPolicy := ratelimit.Per("ip_auth", cfg.RateLimit.AuthPerMinute, time.Minute)
+	strict := s.rateLimit(strictPolicy)
 	refresh := s.rateLimit(ratelimit.Per("ip_refresh", max(60, cfg.RateLimit.AuthPerMinute*2), time.Minute))
 	email := s.rateLimit(ratelimit.Per("ip_email", 5, 15*time.Minute))
 
@@ -154,7 +158,7 @@ func (s *Server) routes() {
 	ob.Get("/:provider/authorize", strict, s.oauthAuthorize)
 	ob.Get("/:provider/callback", strict, s.oauthCallback)
 	ob.Post("/:provider/callback", strict, s.oauthCallback) // Apple form_post
-	ob.Post("/token", jsonBody(maxJSONBody), strict, s.oauthToken)
+	ob.Post("/token", tokenBody(maxJSONBody), s.tokenEndpoint(strictPolicy))
 	ob.Post("/:provider/native", jsonBody(maxJSONBody), strict, s.oauthNative)
 
 	me := v1.Group("/me", s.requireAuth())
@@ -238,5 +242,7 @@ func (s *Server) discovery(c fiber.Ctx) error {
 		"authorization_endpoint":                strings.TrimSuffix(base, "/") + "/v1/oauth/{provider}/authorize",
 		"code_challenge_methods_supported":      []string{"S256"},
 		"userinfo_endpoint":                     base + "/v1/me",
+		"grant_types_supported":                 []string{"client_credentials"},
+		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"},
 	})
 }

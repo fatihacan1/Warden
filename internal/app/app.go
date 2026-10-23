@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -25,6 +26,7 @@ import (
 	"github.com/fatihacan1/warden/internal/events"
 	"github.com/fatihacan1/warden/internal/mailer"
 	"github.com/fatihacan1/warden/internal/oauth"
+	"github.com/fatihacan1/warden/internal/oauthclients"
 	"github.com/fatihacan1/warden/internal/observability"
 	"github.com/fatihacan1/warden/internal/platform/objectstore"
 	"github.com/fatihacan1/warden/internal/platform/postgres"
@@ -61,6 +63,7 @@ type App struct {
 	Box       *secretbox.Box
 	Settings  *settings.Manager
 	APIKeys   *apikeys.Manager
+	Clients   *oauthclients.Manager
 	Webhooks  *webhooks.Manager
 	Mail      *mailer.Library
 	Renderer  *mailer.Renderer
@@ -188,9 +191,12 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 		Settings: a.Settings,
 	})
 
+	a.Clients = oauthclients.NewManager(a.Store, cfg.Token.Audience, log)
+
 	ready := a.readiness
 	if a.HTTP, err = httpapi.New(httpapi.Deps{
-		Config: cfg, Auth: a.Auth, Tokens: a.Tokens, Keys: a.Keys, OAuth: a.OAuth,
+		Clients: a.Clients,
+		Config:  cfg, Auth: a.Auth, Tokens: a.Tokens, Keys: a.Keys, OAuth: a.OAuth,
 		Limiter: limiter, Metrics: a.Metrics, Log: log, Ready: ready, Settings: a.Settings, APIKeys: a.APIKeys,
 	}); err != nil {
 		a.Close()
@@ -200,13 +206,23 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 		Config: cfg, Auth: a.Auth, Store: a.Store, Redis: a.Redis, OAuth: a.OAuth, Keys: a.Keys,
 		Limiter: limiter, Metrics: a.Metrics, Log: log, Ready: ready, Events: publisher != nil, Settings: a.Settings,
 		APIKeys: a.APIKeys, Webhooks: a.Webhooks, Mail: a.Mail, Renderer: renderer, Sender: sender,
-		AccessTokens: accesstokens.NewManager(a.Store, log),
+		AccessTokens: accesstokens.NewManager(a.Store, log), Clients: a.Clients,
 	}); err != nil {
 		a.Close()
 		return nil, err
 	}
 	if cfg.GRPC.Enabled {
-		a.GRPC = grpcapi.New(a.Auth, a.Tokens, cfg.GRPC.APIKeys, cfg.GRPC.Reflection, log, a.Metrics)
+		tlsCfg, err := cfg.GRPC.TLSConfig()
+		if err != nil {
+			a.Close()
+			return nil, err
+		}
+		a.GRPC = grpcapi.New(a.Auth, a.Tokens, grpcapi.Options{
+			APIKeys: cfg.GRPC.APIKeys, Reflection: cfg.GRPC.Reflection, TLS: tlsCfg, MTLSOnly: cfg.GRPC.MTLSOnly,
+		}, log, a.Metrics)
+		if tlsCfg != nil {
+			log.Info("grpc tls enabled", "mtls", tlsCfg.ClientAuth == tls.RequireAndVerifyClientCert, "mtls_only", cfg.GRPC.MTLSOnly)
+		}
 	}
 	return a, nil
 }

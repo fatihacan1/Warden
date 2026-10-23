@@ -187,6 +187,11 @@ func (s *Server) requireAuth() fiber.Handler {
 			c.Set(fiber.HeaderWWWAuthenticate, `Bearer realm="warden", error="invalid_token"`)
 			return domain.ErrInvalidToken
 		}
+		// Service tokens identify a client, not a user: never valid here.
+		if claims.IsMachine() {
+			c.Set(fiber.HeaderWWWAuthenticate, `Bearer realm="warden", error="invalid_token"`)
+			return domain.ErrInvalidToken
+		}
 		uid, err1 := claims.UserID()
 		sid, err2 := claims.SID()
 		if err1 != nil || err2 != nil {

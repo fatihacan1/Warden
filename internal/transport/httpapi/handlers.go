@@ -128,7 +128,7 @@ func (s *Server) signOut(c fiber.Ctx) error {
 			return err
 		}
 	} else if h, ok := bearer(c.Get(fiber.HeaderAuthorization)); ok {
-		if claims, err := s.tokens.Verify(h); err == nil {
+		if claims, err := s.tokens.Verify(h); err == nil && !claims.IsMachine() {
 			uid, _ := claims.UserID()
 			sid, _ := claims.SID()
 			if err := s.auth.RevokeSession(c.Context(), uid, sid, domain.RevokeSignOut, meta(c)); err != nil {

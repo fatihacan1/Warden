@@ -156,6 +156,74 @@ curl -X POST https://auth.example.com/v1/server/users \
   -d '{"email":"ada@example.com","password":"correct horse battery staple","roles":["admin"],"email_verified":true}'
 ```
 
+## Service-to-service
+
+Microservices that call each other should not share user tokens or one long-lived API key. Give each service a **service client** (admin UI, *Developers > Service clients*) and let it trade its credentials for a short-lived access token with the OAuth 2.0 client credentials grant ([RFC 6749 section 4.4](https://datatracker.ietf.org/doc/html/rfc6749#section-4.4)). The receiving service verifies the token offline with the same JWKS it uses for user tokens.
+
+```
+orders-service ── client_id + client_secret ──▶ Warden  POST /v1/oauth/token
+orders-service ◀── access_token (15 min) ────── Warden
+orders-service ── Authorization: Bearer … ────▶ billing-service ── verifies with the JWKS, no call to Warden
+```
+
+A client has a name, the **scopes** and **audiences** it may ask for, and a token lifetime (default 15 minutes, at most 1 hour). The client ID looks like `svc_…`; the secret (`wcs_…`) is shown once and stored as a SHA-256 hash.
+
+```bash
+curl -u "$CLIENT_ID:$CLIENT_SECRET" \
+  -d grant_type=client_credentials \
+  -d scope="invoices:read invoices:write" \
+  -d audience=billing-api \
+  https://auth.example.com/v1/oauth/token
+```
+
+```json
+{ "access_token": "eyJ…", "token_type": "Bearer", "expires_in": 900, "scope": "invoices:read invoices:write" }
+```
+
+- **Authentication**: HTTP Basic (`client_secret_basic`, preferred) or `client_id` and `client_secret` in the body (`client_secret_post`). Not both. The body is `application/x-www-form-urlencoded` as the RFC says; JSON works too.
+- **`scope`** is a space separated subset of the client's allowed scopes; omitted, the client gets all of them. Scope names are yours (`invoices:read`).
+- **`audience`** (or `resource`, [RFC 8707](https://datatracker.ietf.org/doc/html/rfc8707)) must be in the client's allowed list; omitted, the first one is used. A token has the audiences you asked for, so it is useless against a service you did not name. A new client without an explicit list is allowed `TOKEN_AUDIENCE`.
+- There is **no refresh token**. Ask again when `expires_in` runs out (the SDKs cache the token and do this for you).
+- Errors follow RFC 6749 section 5.2: `{"error":"invalid_client"}` (401) for an unknown client, a wrong secret and a revoked client alike, `invalid_scope`, `invalid_target`, `invalid_request`, `unsupported_grant_type` (400). Requests are rate limited per client (`RATE_LIMIT_CLIENT_TOKEN_PER_MINUTE`) and per IP (`RATE_LIMIT_CLIENT_TOKEN_IP_PER_MINUTE`), and every issued token and failed attempt is in the audit log.
+
+### What is in the token
+
+An ES256 JWT with `typ: at+jwt` ([RFC 9068](https://datatracker.ietf.org/doc/html/rfc9068)):
+
+```json
+{ "iss": "https://auth.example.com", "sub": "client:svc_Zk3vN9aQ2xTt", "client_id": "svc_Zk3vN9aQ2xTt",
+  "scope": "invoices:read invoices:write", "aud": ["billing-api"], "iat": 1767225600, "exp": 1767226500, "jti": "…" }
+```
+
+There is no `sid`, `email` or `roles`: it identifies a service, never a user. Warden's own user endpoints (`/v1/me/...`) and GraphQL refuse it.
+
+### Verifying it in the receiving service
+
+Same as a user token (see above): check the signature with the JWKS, `typ`, issuer and **your own audience**, then authorize on `scope`. Tell the two kinds apart with `client_id` (present only on service tokens) or the `client:` prefix of `sub`.
+
+```ts
+import { createWardenServer, isServiceToken } from "@warden/server";
+
+const warden = createWardenServer({ url: "https://auth.example.com", audience: "billing-api", secretKey: process.env.WARDEN_SECRET_KEY });
+app.use("/internal", warden.middleware({ scopes: ["invoices:read"] })); // machine tokens must carry these scopes
+```
+
+```go
+// golang-jwt: after verifying, read the extra claims.
+type claims struct {
+    jwt.RegisteredClaims
+    ClientID string `json:"client_id"`
+    Scope    string `json:"scope"`
+}
+// authorize: slices.Contains(strings.Fields(c.Scope), "invoices:read")
+```
+
+For an online check, `POST /v1/server/tokens/verify` (secret key) understands service tokens. It answers `{"active": true, "token_type": "service", "client_id": "…", "scope": "…", "aud": […]}`, and `{"active": false, "reason": "client_revoked"}` as soon as the client is revoked. The gRPC `VerifyAccessToken` returns `valid: false, reason: "service_token"` for them, since the response has no place for a client.
+
+### Rotating a secret without downtime
+
+*Rotate secret* in the admin UI creates a new secret and keeps the **old one valid for 1 or 24 hours** (or ends it at once). Deploy the new secret to the service during that window; the old one stops by itself. Rotating twice in a row replaces the old secret, so only the latest previous secret has a grace period. Revoking a client stops new tokens at once; tokens already issued stay valid until they expire (at most the client's token lifetime, 15 minutes by default), and online introspection refuses them immediately.
+
 ## Web apps
 
 Use **cookie mode**: send `X-Auth-Mode: cookie` on sign-up, sign-in, MFA, token exchange, refresh and sign-out. Warden then puts the refresh token in an HttpOnly cookie scoped to `/v1/auth` and leaves it out of the JSON. Keep the access token in memory only (not `localStorage`).
@@ -393,7 +461,46 @@ Other languages: generate a client from [api/proto/warden/v1/warden.proto](../ap
 grpcurl -plaintext -H "x-api-key: $KEY" localhost:9091 list warden.v1.AuthService
 ```
 
-Use TLS (a service mesh or a TLS-terminating proxy) when gRPC traffic leaves a trusted network.
+### TLS and mutual TLS
+
+Set `GRPC_TLS_CERT_FILE` and `GRPC_TLS_KEY_FILE` and the port serves TLS 1.3 (older versions are refused). Add `GRPC_TLS_CLIENT_CA_FILE` and clients must also present a certificate signed by that CA, or the handshake fails: that is mutual TLS. The API key is still required on top of it, unless you set `GRPC_MTLS_ONLY=true`, which accepts a verified client certificate instead of a key (`GRPC_API_KEYS` may then be empty). Startup fails if a file is unreadable, the key does not match the certificate, or the CA has no certificate.
+
+```bash
+# server config
+GRPC_TLS_CERT_FILE=/etc/warden/tls/server.pem
+GRPC_TLS_KEY_FILE=/etc/warden/tls/server.key
+GRPC_TLS_CLIENT_CA_FILE=/etc/warden/tls/clients-ca.pem
+GRPC_MTLS_ONLY=true
+```
+
+```go
+cert, _ := tls.LoadX509KeyPair("orders.pem", "orders.key")
+roots := x509.NewCertPool()
+roots.AppendCertsFromPEM(serverCA) // the CA that signed the Warden server certificate
+creds := credentials.NewTLS(&tls.Config{Certificates: []tls.Certificate{cert}, RootCAs: roots, ServerName: "warden.internal", MinVersion: tls.VersionTLS13})
+conn, _ := grpc.NewClient("warden.internal:9091", grpc.WithTransportCredentials(creds))
+```
+
+Certificates for a test setup (a private CA, a server certificate and one client certificate), with OpenSSL:
+
+```bash
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 365 \
+  -keyout ca.key -out ca.pem -subj "/CN=warden-test-ca"
+
+# server (the name clients connect to must be in the SAN)
+openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout server.key -out server.csr -subj "/CN=warden.internal"
+openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial -days 90 -out server.pem \
+  -extfile <(printf "subjectAltName=DNS:warden.internal,DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth")
+
+# one client
+openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout orders.key -out orders.csr -subj "/CN=orders-service"
+openssl x509 -req -in orders.csr -CA ca.pem -CAkey ca.key -CAcreateserial -days 90 -out orders.pem \
+  -extfile <(printf "extendedKeyUsage=clientAuth")
+
+grpcurl -cacert ca.pem -cert orders.pem -key orders.key -servername warden.internal localhost:9091 list
+```
+
+For production use a real CA (Vault PKI, cert-manager, your service mesh) with short-lived certificates. The server reads its certificate files at startup, so restart (or roll) Warden after renewing them. `internal/transport/grpcapi/mtls_test.go` generates a CA and certificates in Go with `crypto/x509` if you prefer code to OpenSSL.
 
 ## Error handling
 

@@ -1,0 +1,113 @@
+{{define "content"}}{{$csrf := .CSRF}}{{with .Data}}{{$now := .Now}}
+<div class="head">
+  <div>
+    <h1>Service clients</h1>
+    <p class="lede">Let your microservices call each other with short-lived tokens. Each service trades its client secret for an access token (OAuth 2.0 client credentials) that the receiving service verifies offline with the signing keys.</p>
+  </div>
+</div>
+
+{{with .Reveal}}
+<section class="panel reveal" aria-live="polite">
+  <div class="panel-body">
+    <h2>{{if .Rotated}}New secret for “{{.Name}}”{{else}}Copy the secret for “{{.Name}}” now{{end}}</h2>
+    <p>This is the only time the secret is shown. Store it in the service's secret manager or environment, never in a web or mobile app.{{if .Rotated}} {{.GraceNote}}{{end}}</p>
+    <p class="help mb-0">Client ID</p>
+    <div class="copy"><code>{{.ClientID}}</code><button type="button" class="btn btn-small" data-copy="{{.ClientID}}">Copy</button></div>
+    <p class="help mb-0">Client secret</p>
+    <div class="copy"><code>{{.Value}}</code><button type="button" class="btn btn-small" data-copy="{{.Value}}">Copy</button></div>
+  </div>
+</section>
+{{end}}
+
+<div class="grid grid-main">
+  <div class="stack">
+    <section class="panel">
+      <header><h2>Clients</h2></header>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Scopes and audiences</th><th class="hide-sm">Last used</th><th><span class="sr-only">Actions</span></th></tr></thead>
+          <tbody>
+          {{range .Clients}}{{$active := eq .Status "active"}}
+            <tr>
+              <td><strong>{{.Name}}</strong>{{if not $active}} <span class="tag tag-err">Revoked</span>{{end}}<br>
+                <span class="muted small mono break">{{.ClientID}}</span><br>
+                <span class="muted small">Secret {{.SecretHint}} · tokens last {{.TTLMinutes}} min</span>
+                {{if .PrevSecretActive $now}}<br><span class="tag tag-accent">Old secret valid {{until (deref .PrevSecretExpiresAt)}}</span>{{end}}</td>
+              <td>
+                <div class="chips">{{range .AllowedScopes}}<span class="tag">{{.}}</span>{{else}}<span class="muted small">No scopes</span>{{end}}</div>
+                <p class="muted small mb-0">aud: {{join .AllowedAudiences ", "}}</p>
+              </td>
+              <td class="hide-sm num">{{if .LastUsedAt}}{{ago (deref .LastUsedAt)}}{{else}}<span class="muted">Never</span>{{end}}</td>
+              <td class="cell-action">
+                {{if $active}}
+                <form method="post" action="/admin/service-clients/{{.ID}}/rotate" class="inline-form" data-confirm="Create a new secret for {{.Name}}?">
+                  <input type="hidden" name="_csrf" value="{{$csrf}}">
+                  <label class="sr-only" for="grace-{{.ID}}">Old secret</label>
+                  <select id="grace-{{.ID}}" name="grace">
+                    {{range $.Data.Graces}}<option value="{{.Key}}" {{if eq .Key "24h"}}selected{{end}}>{{.Label}}</option>{{end}}
+                  </select>
+                  <button class="btn btn-small" type="submit">Rotate secret</button>
+                </form>
+                <form method="post" action="/admin/service-clients/{{.ID}}/revoke" class="inline-form" data-confirm="Revoke {{.Name}}? It can no longer get tokens. Tokens already issued work until they expire (at most {{.TTLMinutes}} min).">
+                  <input type="hidden" name="_csrf" value="{{$csrf}}">
+                  <button class="btn btn-small btn-danger" type="submit">Revoke</button>
+                </form>
+                {{end}}
+              </td>
+            </tr>
+          {{else}}
+            <tr><td colspan="4" class="muted">No service clients yet. Create one for each service that calls another.</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header><h2>How a service gets a token</h2></header>
+      <div class="panel-body prose">
+<pre>curl -u "$CLIENT_ID:$CLIENT_SECRET" \
+  -d grant_type=client_credentials \
+  -d scope="orders:read" \
+  -d audience=orders-api \
+  {{.PublicURL}}/v1/oauth/token</pre>
+        <p>The answer holds <code>access_token</code>, <code>expires_in</code> and <code>scope</code>. Send the token as <code>Authorization: Bearer</code> to the other service, which checks the signature with <code>{{.PublicURL}}/.well-known/jwks.json</code>, the issuer, its own audience and the <code>scope</code> claim. The token has <code>sub: client:…</code> and <code>client_id</code> but no user, so it is refused by every user endpoint.</p>
+        <ul class="plain-list">
+          <li>Secrets are stored as SHA-256 hashes and shown once. Wrong secret, unknown client and revoked client all answer <code>invalid_client</code>.</li>
+          <li>A client can only ask for the scopes and audiences you list. Without a <code>scope</code> it gets all of its scopes; without an <code>audience</code> it gets the first one listed.</li>
+          <li>Rotate with the old secret kept for 1 or 24 hours, update your services, and the old one stops by itself.</li>
+          <li>Requests are rate limited per client and per IP, and issued tokens and failed attempts are in the audit log.</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <header><h2>Create a client</h2></header>
+    <form method="post" action="/admin/service-clients" class="panel-body">
+      <input type="hidden" name="_csrf" value="{{$csrf}}">
+      <div class="field">
+        <label for="sc-name">Name</label>
+        <input id="sc-name" name="name" type="text" placeholder="billing-service" required maxlength="80">
+      </div>
+      <div class="field">
+        <label for="sc-scopes">Allowed scopes</label>
+        <textarea id="sc-scopes" name="scopes" spellcheck="false" rows="3" placeholder="orders:read&#10;invoices:write"></textarea>
+        <p class="help">One per line. Your services decide what they mean.</p>
+      </div>
+      <div class="field">
+        <label for="sc-aud">Allowed audiences <span class="muted">(optional)</span></label>
+        <textarea id="sc-aud" name="audiences" spellcheck="false" rows="2" placeholder="{{.DefaultAudience}}"></textarea>
+        <p class="help">The services that may receive its tokens, one per line. The first is the default. Empty means <code>{{.DefaultAudience}}</code>.</p>
+      </div>
+      <fieldset class="field">
+        <legend>Token lifetime</legend>
+        <div class="seg">
+          {{range .TTLs}}<label><input type="radio" name="ttl" value="{{.Key}}" {{if eq .Key "15"}}checked{{end}}><span>{{.Label}}</span></label>{{end}}
+        </div>
+      </fieldset>
+      <button class="btn btn-primary" type="submit">Create client</button>
+    </form>
+  </section>
+</div>
+{{end}}{{end}}
