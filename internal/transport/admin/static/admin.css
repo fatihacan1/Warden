@@ -374,7 +374,6 @@ input[type=email] { width: 100%; font: inherit; color: var(--ink); background: v
 
 /* Email editor: preview takes the height of the screen */
 .editor { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-.editor > .stack > .panel:first-child { position: sticky; top: 16px; }
 .preview-frame { height: calc(100vh - 210px); min-height: 640px; }
 .code-editor .code-input { min-height: 46vh; }
 #text.code-input { min-height: 24vh; }
@@ -423,3 +422,6 @@ pre.code-sample .tok-comment { color: var(--ink-3); font-style: italic; }
 .seg { flex-wrap: nowrap; flex: none; }
 .perm-row .seg { align-self: center; }
 @media (max-width: 1100px) { .grid-tokens { grid-template-columns: 1fr; } }
+
+.preview-panel:fullscreen { background: var(--paper); display: flex; flex-direction: column; }
+.preview-panel:fullscreen .preview-frame { flex: 1; height: auto; min-height: 0; }

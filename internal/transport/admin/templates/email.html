@@ -45,8 +45,8 @@
   </form>
 
   <div class="stack">
-    <section class="panel">
-      <header><h2>Preview</h2><span class="muted small">Sample data</span></header>
+    <section class="panel preview-panel" id="preview-panel">
+      <header><h2>Preview</h2><div class="row"><span class="muted small">Sample data</span><button type="button" class="btn btn-small" data-fullscreen="preview-panel">Full screen</button></div></header>
       <iframe name="preview" class="preview-frame" title="Email preview" sandbox src="/admin/emails/{{$i.Name}}/preview?lang={{$lang}}"></iframe>
       {{if not .Layout}}<p class="panel-body small mb-0"><a href="/admin/emails/{{$i.Name}}/preview?lang={{$lang}}&view=text" target="preview">Plain text version</a> · <a href="/admin/emails/{{$i.Name}}/preview?lang={{$lang}}" target="preview">HTML version</a></p>{{end}}
     </section>

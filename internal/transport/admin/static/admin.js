@@ -328,3 +328,17 @@ document.addEventListener("submit", function (e) {
     if (label) pre.insertBefore(label, pre.firstChild);
   });
 })();
+
+// Full screen toggle for the email preview.
+document.addEventListener("click", function (e) {
+  var btn = e.target.closest("[data-fullscreen]");
+  if (!btn) return;
+  var el = document.getElementById(btn.getAttribute("data-fullscreen"));
+  if (document.fullscreenElement) document.exitFullscreen();
+  else if (el.requestFullscreen) el.requestFullscreen();
+});
+document.addEventListener("fullscreenchange", function () {
+  document.querySelectorAll("[data-fullscreen]").forEach(function (b) {
+    b.textContent = document.fullscreenElement ? "Exit full screen" : "Full screen";
+  });
+});
