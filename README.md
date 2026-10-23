@@ -280,6 +280,7 @@ Every option is documented in [.env.example](.env.example). The most important o
 | `ADMIN_TOKEN` | Enables the admin UI |
 | `DATABASE_URL`, `REDIS_URL` | Required dependencies |
 | `S3_*`, `RABBITMQ_URL`, `SMTP_*` | Optional: avatars, events, real email delivery |
+| `MAIL_DELIVERY` | `smtp` (production), `inbox` (no SMTP: emails show in the admin UI Inbox), `direct` (send to the recipient MX on port 25, often blocked or spam), `log`. Test with `warden mail-test <address>` |
 | `AUTH_ALLOWED_REDIRECT_URIS`, `HTTP_CORS_ALLOWED_ORIGINS` | Where your apps live (also editable in the admin UI) |
 | `TOKEN_ACCESS_TTL`, `TOKEN_REFRESH_TTL`, `TOKEN_SESSION_MAX_AGE` | Token and session lifetimes |
 | `HTTP_TRUSTED_PROXIES` | Your load balancer ranges, so client IPs (and rate limits) are correct |
@@ -360,9 +361,11 @@ go test -tags integration ./test/e2e/ -count=1        # integration tests agains
 
 `make help` lists shortcuts (lint, proto generation, image build, load test). Regenerate gRPC code with `buf generate` after editing `api/proto`.
 
-Commands of the binary: `warden serve` (default), `warden setup`, `warden migrate [status]`, `warden reencrypt`, `warden mcp`, `warden keygen`, `warden healthcheck`, `warden version`.
+Commands of the binary: `warden serve` (default), `warden setup`, `warden migrate [status]`, `warden reencrypt`, `warden mail-test`, `warden mcp`, `warden keygen`, `warden healthcheck`, `warden version`.
 
-For production deployment, scaling and the go-live checklist see [docs/production.md](docs/production.md).
+For production deployment, scaling and the go-live checklist see [docs/production.md](docs/production.md). Kubernetes: [docs/kubernetes.md](docs/kubernetes.md). A test server without a domain or SMTP: [docs/test-server.md](docs/test-server.md).
+
+Using an AI coding assistant? Point it at [AGENTS.md](AGENTS.md): which key goes where, deployment choices, service-to-service setup and the rules for changing this repository.
 
 ## Project layout
 
