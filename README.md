@@ -325,7 +325,20 @@ Warden is stateless and scales horizontally behind a load balancer. Under overlo
 - **Graceful degradation.** Redis outages fail open for rate limits (configurable). RabbitMQ and SMTP outages are absorbed by the durable outbox and retried with backoff. S3 outages only affect avatar uploads.
 - **Background work on one replica.** Key rotation and cleanup use Postgres advisory locks; the outbox uses `FOR UPDATE SKIP LOCKED`, so any number of replicas can run safely.
 
-Local k6 run ([loadtest/auth.js](loadtest/auth.js)) on a 12-core laptop, all services in Docker: 21,300 requests in 45 s, 0 errors, `/v1/me` p95 of 80 ms while password sign-ins ramped to 150 per second.
+Local k6 runs on a 12-thread Windows laptop with Warden, k6, Postgres, Redis and RabbitMQ on the same machine (so the numbers are conservative), rate limits off, 10 to 100 virtual users over 45 s plus a 15 s hold, one scenario per run ([loadtest/scenarios.js](loadtest/scenarios.js)). No errors in any run.
+
+| Endpoint | Requests/s | p50 | p95 | p99 | Warden CPU |
+|---|---|---|---|---|---|
+| `GET /.well-known/jwks.json` | 8,500 | 6 ms | 17 ms | 26 ms | 0.9 cores |
+| `POST /v1/server/tokens/verify` | 4,000 | 14 ms | 32 ms | 46 ms | 1.2 cores |
+| GraphQL `{ me { id } }` | 3,700 | 15 ms | 35 ms | 48 ms | 1.5 cores |
+| `GET /v1/me` | 2,500 | 18 ms | 72 ms | 137 ms | 1.1 cores |
+| `POST /v1/oauth/token` (client credentials) | 1,800 | 29 ms | 74 ms | 205 ms | 0.7 cores |
+| `POST /v1/auth/refresh` | 1,100 | 51 ms | 127 ms | 197 ms | 0.7 cores |
+| `POST /v1/auth/signin` (Argon2id) | 100 | 619 ms | 1.3 s | 1.5 s | 6.6 cores |
+| `POST /v1/auth/signup` (Argon2id) | 87 | 754 ms | 1.3 s | 1.5 s | 3.1 cores |
+
+Password hashing is the capacity limit: one hash takes about 25 ms on an idle core, so plan for roughly 8 to 10 sign-ins per second per core and add replicas to scale. The light endpoints were limited by the load generator sharing the machine, not by Warden. `POST /v1/server/tokens/verify` is capped at 6,000 requests per minute per secret key.
 
 ## Observability
 
