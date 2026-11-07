@@ -94,6 +94,7 @@ type Identity {
 type Providers {
   password: Boolean!
   signupEnabled: Boolean!
+  requireWorkEmail: Boolean!
   emailVerificationRequired: Boolean!
   passwordMinLength: Int!
   social: [Provider!]!
@@ -355,6 +356,7 @@ type gqlProvider struct {
 type gqlProviders struct {
 	Password                  bool
 	SignupEnabled             bool
+	RequireWorkEmail          bool
 	EmailVerificationRequired bool
 	PasswordMinLength         int32
 	Social                    []*gqlProvider
@@ -362,7 +364,7 @@ type gqlProviders struct {
 
 func (r *gqlRoot) Providers() *gqlProviders {
 	rt := r.s.settings.Get()
-	out := &gqlProviders{Password: true, SignupEnabled: rt.AllowSignup, EmailVerificationRequired: rt.RequireEmailVerification,
+	out := &gqlProviders{Password: true, SignupEnabled: rt.AllowSignup, RequireWorkEmail: rt.RequireWorkEmail, EmailVerificationRequired: rt.RequireEmailVerification,
 		PasswordMinLength: int32(min(rt.PasswordMinLength, 64)), // #nosec G115 -- validated to 8..64
 		Social:            []*gqlProvider{},
 	}

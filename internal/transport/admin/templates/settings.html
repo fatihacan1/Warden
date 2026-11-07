@@ -22,6 +22,17 @@
       </div>
       <div class="toggle-row">
         <div>
+          <h3>Require work email</h3>
+          <p class="help">Block free and disposable email providers for new accounts. Existing users can still sign in.</p>
+        </div>
+        <label class="switch"><input type="checkbox" name="require_work_email" {{if $s.RequireWorkEmail}}checked{{end}} aria-label="Require work email"></label>
+      </div>
+      <div class="provider-grid">
+        <div class="field"><label for="work_email_extra_blocked">Extra blocked domains</label><textarea id="work_email_extra_blocked" name="work_email_extra_blocked" spellcheck="false">{{join $s.WorkEmailExtraBlocked "\n"}}</textarea><p class="help">One domain per line or comma separated. Subdomains are included.</p></div>
+        <div class="field"><label for="work_email_allowed">Allowed domains</label><textarea id="work_email_allowed" name="work_email_allowed" spellcheck="false">{{join $s.WorkEmailAllowed "\n"}}</textarea><p class="help">Exceptions to blocked domains, including their subdomains.</p></div>
+      </div>
+      <div class="toggle-row">
+        <div>
           <h3>Require email verification</h3>
           <p class="help">Password users must click the link in their verification email before they can sign in.</p>
         </div>

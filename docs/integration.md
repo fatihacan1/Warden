@@ -355,6 +355,8 @@ sequenceDiagram
 - If the provider's email is **not verified** and the email is taken, sign-in fails with `email_taken`.
 - Otherwise a new user is created (unless sign-ups are disabled).
 
+When `AUTH_REQUIRE_WORK_EMAIL=true`, new password and social accounts must use a work email. Free and disposable providers are blocked by an embedded list; add comma-separated domains with `AUTH_WORK_EMAIL_EXTRA_BLOCKED` and exceptions with `AUTH_WORK_EMAIL_ALLOWED`. Domains include subdomains, and allowed entries take precedence. These settings can also be changed in admin Settings. Existing users can still sign in, and administrators can create users. The public `/v1/auth/providers` response exposes `require_work_email` (GraphQL: `providers { requireWorkEmail }`); rejected sign-ups return `work_email_required`.
+
 ## Setting up identity providers
 
 Open the admin UI, **Sign-in providers**. Each card shows the callback URL to register and a link to the provider's console.

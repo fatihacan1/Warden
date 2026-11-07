@@ -28,6 +28,9 @@ import (
 // Runtime are the editable settings.
 type Runtime struct {
 	AllowSignup              bool     `json:"allow_signup"`
+	RequireWorkEmail         bool     `json:"require_work_email"`
+	WorkEmailExtraBlocked    []string `json:"work_email_extra_blocked"`
+	WorkEmailAllowed         []string `json:"work_email_allowed"`
 	RequireEmailVerification bool     `json:"require_email_verification"`
 	CheckBreachedPasswords   bool     `json:"check_breached_passwords"`
 	PasswordMinLength        int      `json:"password_min_length"`
@@ -73,6 +76,9 @@ type Manager struct {
 func FromConfig(c *config.Config) Runtime {
 	return Runtime{
 		AllowSignup:              c.Auth.AllowSignup,
+		RequireWorkEmail:         c.Auth.RequireWorkEmail,
+		WorkEmailExtraBlocked:    slices.Clone(c.Auth.WorkEmailExtraBlocked),
+		WorkEmailAllowed:         slices.Clone(c.Auth.WorkEmailAllowed),
 		RequireEmailVerification: c.Auth.RequireEmailVerification,
 		CheckBreachedPasswords:   c.Password.CheckBreached,
 		PasswordMinLength:        c.Password.MinLength,
@@ -132,6 +138,12 @@ func (m *Manager) Reload(ctx context.Context) error {
 		return err
 	}
 	r := m.env // fields missing from older saved JSON keep env values
+	// Unmarshal can reuse slice storage, so keep environment defaults isolated.
+	r.WorkEmailExtraBlocked = slices.Clone(m.env.WorkEmailExtraBlocked)
+	r.WorkEmailAllowed = slices.Clone(m.env.WorkEmailAllowed)
+	r.AllowedRedirectURIs = slices.Clone(m.env.AllowedRedirectURIs)
+	r.CORSOrigins = slices.Clone(m.env.CORSOrigins)
+	r.AdminAllowedIPs = slices.Clone(m.env.AdminAllowedIPs)
 	if err := json.Unmarshal(data, &r); err != nil {
 		return fmt.Errorf("settings: decode: %w", err)
 	}
@@ -193,6 +205,8 @@ func (r *Runtime) normalize() {
 		origins = append(origins, strings.TrimRight(strings.TrimSpace(o), "/"))
 	}
 	r.CORSOrigins = cleanList(origins)
+	r.WorkEmailExtraBlocked = cleanList(r.WorkEmailExtraBlocked)
+	r.WorkEmailAllowed = cleanList(r.WorkEmailAllowed)
 	r.AdminAllowedIPs = cleanList(r.AdminAllowedIPs)
 	r.DefaultLocale = strings.ToLower(strings.TrimSpace(r.DefaultLocale))
 }

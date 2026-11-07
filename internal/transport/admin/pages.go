@@ -308,6 +308,9 @@ func (s *Server) saveSettings(c fiber.Ctx) error {
 	}
 	r := settings.Runtime{
 		AllowSignup:              c.FormValue("allow_signup") == "on",
+		RequireWorkEmail:         c.FormValue("require_work_email") == "on",
+		WorkEmailExtraBlocked:    lines(c.FormValue("work_email_extra_blocked")),
+		WorkEmailAllowed:         lines(c.FormValue("work_email_allowed")),
 		RequireEmailVerification: c.FormValue("require_email_verification") == "on",
 		CheckBreachedPasswords:   c.FormValue("check_breached_passwords") == "on",
 		PasswordMinLength:        atoi("password_min_length"),
@@ -333,7 +336,7 @@ func (s *Server) saveSettings(c fiber.Ctx) error {
 		return backErr(c, "/admin/settings", err)
 	}
 	s.audit(c, "admin.settings_saved", map[string]any{
-		"allow_signup": r.AllowSignup, "require_email_verification": r.RequireEmailVerification,
+		"allow_signup": r.AllowSignup, "require_work_email": r.RequireWorkEmail, "work_email_extra_blocked": r.WorkEmailExtraBlocked, "work_email_allowed": r.WorkEmailAllowed, "require_email_verification": r.RequireEmailVerification,
 		"check_breached_passwords": r.CheckBreachedPasswords, "require_publishable_key": r.RequirePublishableKey,
 		"admin_ip_allowlist": r.AdminIPAllowlist, "admin_allowed_ips": r.AdminAllowedIPs, "default_locale": r.DefaultLocale,
 		"notify_new_device": r.NotifyNewDevice, "notify_account_locked": r.NotifyAccountLocked,

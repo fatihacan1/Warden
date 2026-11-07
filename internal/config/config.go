@@ -182,6 +182,9 @@ type TokenConfig struct {
 type AuthConfig struct {
 	AppName                  string        `env:"APP_NAME" envDefault:"Warden"`
 	AllowSignup              bool          `env:"ALLOW_SIGNUP" envDefault:"true"`
+	RequireWorkEmail         bool          `env:"REQUIRE_WORK_EMAIL" envDefault:"false"`
+	WorkEmailExtraBlocked    []string      `env:"WORK_EMAIL_EXTRA_BLOCKED" envSeparator:","`
+	WorkEmailAllowed         []string      `env:"WORK_EMAIL_ALLOWED" envSeparator:","`
 	RequireEmailVerification bool          `env:"REQUIRE_EMAIL_VERIFICATION" envDefault:"false"`
 	EmailVerificationTTL     time.Duration `env:"EMAIL_VERIFICATION_TTL" envDefault:"24h"`
 	PasswordResetTTL         time.Duration `env:"PASSWORD_RESET_TTL" envDefault:"30m"`

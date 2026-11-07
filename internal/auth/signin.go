@@ -33,6 +33,9 @@ func (s *Service) SignUp(ctx context.Context, in SignUpInput, meta domain.Reques
 	if !ok {
 		return nil, domain.ErrValidation.WithFields(map[string]string{"email": "Enter a valid email address."})
 	}
+	if err := s.checkWorkEmail(email); err != nil {
+		return nil, err
+	}
 	if err := s.checkNewPassword(ctx, in.Password, email); err != nil {
 		return nil, err
 	}

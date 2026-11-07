@@ -106,3 +106,37 @@ func TestProductionRequiresHTTPS(t *testing.T) {
 		t.Fatalf("localhost and custom schemes should be allowed: %v", err)
 	}
 }
+
+func TestWorkEmailOverrideAndReset(t *testing.T) {
+	c := testConfig()
+	c.Auth.RequireWorkEmail = true
+	c.Auth.WorkEmailExtraBlocked = []string{"blocked.example"}
+	c.Auth.WorkEmailAllowed = []string{"gmail.com"}
+	st := &memStore{}
+	m := NewManager(c, st, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx := context.Background()
+	// Older saved settings inherit new fields from the environment.
+	st.data = []byte(`{"allow_signup":false}`)
+	if err := m.Reload(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !m.Get().RequireWorkEmail || len(m.Get().WorkEmailAllowed) != 1 {
+		t.Fatal("missing fields did not inherit environment")
+	}
+	r := *m.Get()
+	r.RequireWorkEmail = false
+	r.WorkEmailExtraBlocked = []string{"other.example"}
+	r.WorkEmailAllowed = []string{}
+	if err := m.Save(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	if m.Get().RequireWorkEmail || m.Get().WorkEmailExtraBlocked[0] != "other.example" || len(m.Get().WorkEmailAllowed) != 0 {
+		t.Fatal("override not applied")
+	}
+	if err := m.Reset(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !m.Get().RequireWorkEmail || m.Get().WorkEmailExtraBlocked[0] != "blocked.example" || m.Get().WorkEmailAllowed[0] != "gmail.com" {
+		t.Fatal("reset did not restore environment")
+	}
+}

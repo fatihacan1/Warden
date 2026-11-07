@@ -84,7 +84,7 @@ var tools = []tool{
 
 	{Name: "get_settings", Description: "Current feature toggles and policies.", Scope: "settings:read", Method: "GET", Path: "/settings", ReadOnly: true},
 	{Name: "update_settings", Description: "Change settings. Pass only the fields to change, using the names returned by get_settings. Admin access settings cannot be changed here.", Scope: "settings:write", Method: "PATCH", Path: "/settings",
-		Params: []param{{Name: "settings", Type: "object", Description: "Fields to change, e.g. {\"allow_signup\": false}.", Required: true, In: "body-root"}}},
+		Params: []param{{Name: "settings", Type: "object", Description: "Fields to change, e.g. {\"allow_signup\": false, \"require_work_email\": true}.", Required: true, In: "body-root"}}},
 
 	{Name: "list_email_templates", Description: "All email templates, their variables and which languages are customized.", Scope: "email_templates:read", Method: "GET", Path: "/email-templates", ReadOnly: true},
 	{Name: "get_email_template", Description: "A template's subject, HTML and text in one language, with its variables and sample data.", Scope: "email_templates:read", Method: "GET", Path: "/email-templates/{name}", ReadOnly: true, Params: []param{pTplName, pLang}},

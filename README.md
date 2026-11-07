@@ -281,6 +281,7 @@ Every option is documented in [.env.example](.env.example). The most important o
 | `DATABASE_URL`, `REDIS_URL` | Required dependencies |
 | `S3_*`, `RABBITMQ_URL`, `SMTP_*` | Optional: avatars, events, real email delivery |
 | `MAIL_DELIVERY` | `smtp` (production), `inbox` (no SMTP: emails show in the admin UI Inbox), `direct` (send to the recipient MX on port 25, often blocked or spam), `log`. Test with `warden mail-test <address>` |
+| `AUTH_REQUIRE_WORK_EMAIL`, `AUTH_WORK_EMAIL_EXTRA_BLOCKED`, `AUTH_WORK_EMAIL_ALLOWED` | Require work email for new accounts; comma-separated blocked domains and allowed exceptions (also editable in Settings) |
 | `AUTH_ALLOWED_REDIRECT_URIS`, `HTTP_CORS_ALLOWED_ORIGINS` | Where your apps live (also editable in the admin UI) |
 | `TOKEN_ACCESS_TTL`, `TOKEN_REFRESH_TTL`, `TOKEN_SESSION_MAX_AGE` | Token and session lifetimes |
 | `HTTP_TRUSTED_PROXIES` | Your load balancer ranges, so client IPs (and rate limits) are correct |
