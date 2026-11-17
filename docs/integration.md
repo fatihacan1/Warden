@@ -15,6 +15,7 @@ How to use a Warden instance from web apps, mobile apps and backend services. Ex
 - [Consuming events](#consuming-events)
 - [GraphQL](#graphql)
 - [gRPC from other services](#grpc-from-other-services)
+- [Bot protection (Cloudflare Turnstile)](#bot-protection-cloudflare-turnstile)
 - [Error handling](#error-handling)
 
 ## Concepts
@@ -511,6 +512,29 @@ grpcurl -cacert ca.pem -cert orders.pem -key orders.key -servername warden.inter
 
 For production use a real CA (Vault PKI, cert-manager, your service mesh) with short-lived certificates. The server reads its certificate files at startup, so restart (or roll) Warden after renewing them. `internal/transport/grpcapi/mtls_test.go` generates a CA and certificates in Go with `crypto/x509` if you prefer code to OpenSSL.
 
+## Bot protection (Cloudflare Turnstile)
+
+`GET /v1/auth/providers` returns a `captcha` object (`null` when Turnstile is off):
+
+```json
+{
+  "provider": "turnstile",
+  "site_key": "0x4AAAAAAA...",
+  "signup": true,
+  "password_forgot": true,
+  "email_resend": true,
+  "signin": "after_failures",
+  "signin_after": 3
+}
+```
+
+Frontend flow:
+
+1. **Render the widget** using `captcha.site_key` and set `data-action` to match the endpoint: `signup` (`POST /v1/auth/signup`), `signin` (`POST /v1/auth/signin`), `password_forgot` (`POST /v1/auth/password/forgot`) or `email_resend` (`POST /v1/me/email/resend`).
+2. **Send the token** in the `CF-Turnstile-Response` header or `turnstile_token` JSON body field. With `warden-auth`: `signUp({ ..., turnstileToken })`, `signIn({ ..., turnstileToken })`, `password.forgot(email, { turnstileToken })`, `email.resend({ turnstileToken })`.
+3. **Handle `after_failures` on sign-in**: if `captcha.signin` is `"after_failures"`, you can omit the widget initially; when `POST /v1/auth/signin` returns `400` with `code: "captcha_required"`, render the widget and retry with the token.
+4. **Reset after every attempt**: Turnstile tokens are single use, so call `turnstile.reset()` after each request (success or error) before submitting again.
+
 ## Error handling
 
 All errors share one shape:
@@ -524,6 +548,8 @@ Branch on `code`, show `message` to users if you like (it never reveals whether 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
 | `validation_failed`, `weak_password`, `breached_password` | 422 | Fix the input; `fields` may name the field |
+| `captcha_required` | 400 | Turnstile token missing; show the widget and retry |
+| `captcha_failed` | 403 | Turnstile token invalid, expired, reused, or wrong hostname/action; reset the widget |
 | `invalid_credentials` | 401 | Wrong email or password |
 | `invalid_token` | 401 | Access, refresh, reset or login code invalid or expired. For refresh: sign the user out |
 | `invalid_mfa_code` | 401 | Wrong TOTP or recovery code |
@@ -533,6 +559,7 @@ Branch on `code`, show `message` to users if you like (it never reveals whether 
 | `invalid_publishable_key`, `origin_not_allowed` | 401, 403 | Missing or unknown `X-Warden-Key`, or the key is used from an origin it is not bound to |
 | `invalid_secret_key`, `secret_key_in_browser` | 401, 403 | Server API called without a valid secret key, or from a browser |
 | `rate_limited` | 429 | Respect `Retry-After` |
+| `captcha_unavailable` | 503 | Cloudflare Turnstile unreachable or secret rejected |
 | `server_busy`, `service_unavailable` | 503 | Retry after `Retry-After` with backoff |
 
 ## Admin API and AI agents

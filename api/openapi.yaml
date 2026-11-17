@@ -60,7 +60,9 @@ paths:
       summary: Create a password account
       operationId: signUp
       security: []
-      parameters: [{ $ref: "#/components/parameters/AuthMode" }]
+      parameters:
+        - { $ref: "#/components/parameters/AuthMode" }
+        - { $ref: "#/components/parameters/TurnstileResponse" }
       requestBody:
         required: true
         content:
@@ -73,12 +75,15 @@ paths:
                 password: { type: string, minLength: 8, maxLength: 128 }
                 name: { type: string, maxLength: 100 }
                 locale: { type: string, enum: [en, tr], description: "Email language. Defaults to Accept-Language, then the instance default." }
+                turnstile_token: { type: string, description: "Cloudflare Turnstile token (action: signup). Alternative to the CF-Turnstile-Response header." }
       responses:
         "201": { $ref: "#/components/responses/Auth" }
+        "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/Error" }
 
   /v1/auth/signin:
     post:
@@ -87,7 +92,9 @@ paths:
       description: Returns `status = mfa_required` with an `mfa_token` when two-factor authentication is enabled.
       operationId: signIn
       security: []
-      parameters: [{ $ref: "#/components/parameters/AuthMode" }]
+      parameters:
+        - { $ref: "#/components/parameters/AuthMode" }
+        - { $ref: "#/components/parameters/TurnstileResponse" }
       requestBody:
         required: true
         content:
@@ -98,8 +105,10 @@ paths:
               properties:
                 email: { type: string }
                 password: { type: string }
+                turnstile_token: { type: string, description: "Cloudflare Turnstile token (action: signin). Alternative to the CF-Turnstile-Response header." }
       responses:
         "200": { $ref: "#/components/responses/Auth" }
+        "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/RateLimited" }
@@ -198,6 +207,8 @@ paths:
       description: Always returns 202, whether or not the account exists.
       operationId: forgotPassword
       security: []
+      parameters:
+        - { $ref: "#/components/parameters/TurnstileResponse" }
       requestBody:
         required: true
         content:
@@ -207,13 +218,17 @@ paths:
               required: [email]
               properties:
                 email: { type: string }
+                turnstile_token: { type: string, description: "Cloudflare Turnstile token (action: password_forgot). Alternative to the CF-Turnstile-Response header." }
       responses:
         "202":
           description: Accepted
           content:
             application/json:
               schema: { type: object, properties: { message: { type: string } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/Error" }
 
   /v1/auth/password/reset:
     post:
@@ -461,8 +476,21 @@ paths:
       tags: [Account]
       summary: Resend the verification email
       operationId: resendVerification
+      parameters:
+        - { $ref: "#/components/parameters/TurnstileResponse" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                turnstile_token: { type: string, description: "Cloudflare Turnstile token (action: email_resend). Alternative to the CF-Turnstile-Response header." }
       responses:
         "202": { description: Sent if the email is not verified yet }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
 
   /v1/me/avatar:
     put:
@@ -854,6 +882,12 @@ components:
       required: false
       description: Send `cookie` to receive and send the refresh token as an HttpOnly cookie (browser apps).
       schema: { type: string, enum: [cookie] }
+    TurnstileResponse:
+      name: CF-Turnstile-Response
+      in: header
+      required: false
+      description: Cloudflare Turnstile token (alternative to `turnstile_token` in the JSON body). Required when Turnstile is enabled for the endpoint; errors are `captcha_required` (400), `captcha_failed` (403) and `captcha_unavailable` (503).
+      schema: { type: string }
     Provider:
       name: provider
       in: path
@@ -1034,6 +1068,17 @@ components:
         require_work_email: { type: boolean }
         email_verification_required: { type: boolean }
         password_min_length: { type: integer }
+        captcha:
+          type: [object, "null"]
+          description: Public Cloudflare Turnstile settings, or null when bot protection is off.
+          properties:
+            provider: { type: string, enum: [turnstile] }
+            site_key: { type: string }
+            signup: { type: boolean }
+            password_forgot: { type: boolean }
+            email_resend: { type: boolean }
+            signin: { type: string, enum: [off, after_failures, always] }
+            signin_after: { type: integer, minimum: 1, maximum: 20 }
         providers:
           type: array
           items:

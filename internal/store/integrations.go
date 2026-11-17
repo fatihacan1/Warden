@@ -233,6 +233,10 @@ func EncryptedColumns() []EncryptedColumn {
 			`UPDATE webhooks SET secret = $2 WHERE id = $1::uuid`, func(k string) string { return "webhook:" + k }},
 		{"outbox.payload (emails)", `SELECT id::text, payload FROM outbox WHERE topic = 'email.send' AND processed_at IS NULL FOR UPDATE`,
 			`UPDATE outbox SET payload = $2 WHERE id = $1::bigint`, func(string) string { return "email.send" }},
+		// The Turnstile secret saved in the admin UI (label = settings.SecretLabel).
+		{"runtime_settings.turnstile_secret_enc", `SELECT id::text, decode(data->>'turnstile_secret_enc', 'base64') FROM runtime_settings WHERE data ? 'turnstile_secret_enc' FOR UPDATE`,
+			`UPDATE runtime_settings SET data = jsonb_set(data, '{turnstile_secret_enc}', to_jsonb(translate(encode($2::bytea, 'base64'), E'\n', ''))) WHERE id = $1::smallint`,
+			func(string) string { return "settings:turnstile_secret" }},
 	}
 }
 

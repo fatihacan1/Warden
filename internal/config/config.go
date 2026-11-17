@@ -16,6 +16,7 @@ import (
 
 	"github.com/caarlos0/env/v11"
 
+	"github.com/fatihacan1/warden/internal/captcha"
 	"github.com/fatihacan1/warden/internal/crypto/secretbox"
 )
 
@@ -207,6 +208,17 @@ type AuthConfig struct {
 	NotifyNewDevice bool `env:"NOTIFY_NEW_DEVICE" envDefault:"true"`
 	// NotifyAccountLocked emails users when failed attempts lock password sign-in.
 	NotifyAccountLocked bool `env:"NOTIFY_ACCOUNT_LOCKED" envDefault:"true"`
+	// Cloudflare Turnstile bot protection. Off while the secret key is empty.
+	// All of these are editable in the admin UI.
+	TurnstileSecretKey string   `env:"TURNSTILE_SECRET_KEY"`
+	TurnstileSiteKey   string   `env:"TURNSTILE_SITE_KEY"`
+	TurnstileHostnames []string `env:"TURNSTILE_HOSTNAMES" envSeparator:","`
+	TurnstileSignup    bool     `env:"TURNSTILE_SIGNUP" envDefault:"true"`
+	TurnstileForgot    bool     `env:"TURNSTILE_PASSWORD_FORGOT" envDefault:"true"`
+	TurnstileResend    bool     `env:"TURNSTILE_EMAIL_RESEND" envDefault:"true"`
+	// TurnstileSignIn is off, after_failures or always.
+	TurnstileSignIn      string `env:"TURNSTILE_SIGNIN" envDefault:"after_failures"`
+	TurnstileSignInAfter int    `env:"TURNSTILE_SIGNIN_AFTER" envDefault:"3"`
 }
 
 type PasswordConfig struct {
@@ -348,6 +360,15 @@ func boolOr(v string, def bool) bool {
 
 // IsProduction reports whether the service runs with production hardening.
 func (c *Config) IsProduction() bool { return c.Env == "production" }
+
+// Turnstile returns the bot protection settings from the environment. It is
+// on whenever a secret key is set.
+func (c *Config) Turnstile() captcha.Settings {
+	return captcha.Settings{
+		Enabled: c.Auth.TurnstileSecretKey != "", SecretKey: c.Auth.TurnstileSecretKey, SiteKey: c.Auth.TurnstileSiteKey,
+		Hostnames: c.Auth.TurnstileHostnames, SignInMode: c.Auth.TurnstileSignIn, SignInAfter: c.Auth.TurnstileSignInAfter,
+	}
+}
 
 // EncryptionKeyBytes decodes ENCRYPTION_KEY.
 func (c *Config) EncryptionKeyBytes() ([]byte, error) {
@@ -529,6 +550,8 @@ func (c *Config) Validate() error {
 	if c.Auth.LockoutThreshold < 3 {
 		add("AUTH_LOCKOUT_THRESHOLD must be at least 3")
 	}
+	c.Auth.TurnstileHostnames = captcha.NormalizeHostnames(c.Auth.TurnstileHostnames)
+	errs = append(errs, c.Turnstile().Validate(c.IsProduction(), true)...)
 	if c.RateLimit.AuthPerMinute < 1 || c.RateLimit.GlobalPerMinute < 1 || c.RateLimit.ClientTokenPerMinute < 1 || c.RateLimit.ClientTokenIPPerMinute < 1 {
 		add("RATE_LIMIT_* values must be positive")
 	}

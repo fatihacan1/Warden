@@ -61,6 +61,60 @@
   </section>
 
   <section class="panel">
+    <header><h2>Bot protection (Cloudflare Turnstile)</h2></header>
+    <div class="panel-body">
+      <div class="toggle-row">
+        <div>
+          <h3>Require the Turnstile check</h3>
+          <p class="help">Your app shows the Turnstile widget and sends its token with the request. Warden checks the token with Cloudflare on the server, using the secret key, together with the hostname and the action. If Cloudflare cannot be reached, the request is refused. Create a widget at <code>dash.cloudflare.com</code> &rarr; Turnstile.</p>
+        </div>
+        <label class="switch"><input type="checkbox" name="turnstile_enabled" {{if $s.TurnstileEnabled}}checked{{end}} aria-label="Require the Turnstile check"></label>
+      </div>
+      <div class="provider-grid">
+        <div class="field">
+          <label for="turnstile_site_key">Site key</label>
+          <input id="turnstile_site_key" name="turnstile_site_key" type="text" spellcheck="false" autocomplete="off" value="{{$s.TurnstileSiteKey}}">
+          <p class="help">Public. Apps read it from <code>GET /v1/auth/providers</code> to render the widget.</p>
+        </div>
+        <div class="field">
+          <label for="turnstile_secret_key">Secret key</label>
+          <input id="turnstile_secret_key" name="turnstile_secret_key" type="password" spellcheck="false" autocomplete="new-password" placeholder="{{if $s.TurnstileSecretHint}}Saved ({{$s.TurnstileSecretHint}}). Leave empty to keep it{{else}}Not set{{end}}">
+          <p class="help">Stays on the server and is stored encrypted. It is never shown again.</p>
+          {{if $s.TurnstileSecretHint}}<label class="check"><input type="checkbox" name="turnstile_secret_clear"> Remove the saved secret</label>{{end}}
+        </div>
+      </div>
+      <div class="field">
+        <label for="turnstile_hostnames">Accepted hostnames</label>
+        <textarea id="turnstile_hostnames" name="turnstile_hostnames" spellcheck="false" placeholder="app.example.com&#10;www.example.com">{{join $s.TurnstileHostnames "\n"}}</textarea>
+        <p class="help">One per line. A token solved on any other site is rejected. Required in production. The Cloudflare test secret <code>1x0000000000000000000000000000000AA</code> skips this check and is refused in production.</p>
+      </div>
+      <div class="toggle-row">
+        <div><h3>Sign-up</h3><p class="help">Action <code>signup</code>.</p></div>
+        <label class="switch"><input type="checkbox" name="turnstile_signup" {{if $s.TurnstileSignup}}checked{{end}} aria-label="Turnstile on sign-up"></label>
+      </div>
+      <div class="toggle-row">
+        <div><h3>Forgot password</h3><p class="help">Action <code>password_forgot</code>.</p></div>
+        <label class="switch"><input type="checkbox" name="turnstile_password_forgot" {{if $s.TurnstileForgot}}checked{{end}} aria-label="Turnstile on forgot password"></label>
+      </div>
+      <div class="toggle-row">
+        <div><h3>Resend verification email</h3><p class="help">Action <code>email_resend</code>.</p></div>
+        <label class="switch"><input type="checkbox" name="turnstile_email_resend" {{if $s.TurnstileResend}}checked{{end}} aria-label="Turnstile on resend verification email"></label>
+      </div>
+      <fieldset class="lang-pick">
+        <legend>Sign-in (action <code>signin</code>)</legend>
+        <label class="choice"><input type="radio" name="turnstile_signin" value="off" {{if eq $s.TurnstileSignIn "off"}}checked{{end}}> <span>Never</span></label>
+        <label class="choice"><input type="radio" name="turnstile_signin" value="after_failures" {{if eq $s.TurnstileSignIn "after_failures"}}checked{{end}}> <span>After failed attempts</span></label>
+        <label class="choice"><input type="radio" name="turnstile_signin" value="always" {{if eq $s.TurnstileSignIn "always"}}checked{{end}}> <span>Always</span></label>
+      </fieldset>
+      <div class="field">
+        <label for="turnstile_signin_after">Failed attempts before the check</label>
+        <input id="turnstile_signin_after" name="turnstile_signin_after" type="text" inputmode="numeric" value="{{$s.TurnstileSignInAfter}}">
+        <p class="help">1 to 20. Counted per account and per client IP within the lockout window. When reached, sign-in returns <code>captcha_required</code> until a valid token is sent. Keep it below the lockout threshold.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
     <header><h2>Apps that use this instance</h2></header>
     <div class="panel-body provider-grid">
       <div class="field">
@@ -172,5 +226,5 @@
 </form>
 {{end}}
 
-<p class="help mt-20">Connections (database, Redis, S3, RabbitMQ, SMTP), secrets and rate limiting stay in environment variables: they hold credentials or need a restart.</p>
+<p class="help mt-20">Connections (database, Redis, S3, RabbitMQ, SMTP), secrets and rate limiting stay in environment variables: they hold credentials or need a restart. The Turnstile secret is the one exception: it is saved here encrypted with <code>ENCRYPTION_KEY</code>.</p>
 {{end}}{{end}}

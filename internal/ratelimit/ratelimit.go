@@ -128,6 +128,15 @@ func (l *Lockout) Fail(ctx context.Context, key string) int {
 	return n
 }
 
+// Count returns the failures recorded for key in the current window.
+func (l *Lockout) Count(ctx context.Context, key string) (int, error) {
+	n, err := l.rdb.Get(ctx, "lockout:"+key).Int()
+	if err == redis.Nil {
+		return 0, nil
+	}
+	return n, err
+}
+
 // Reset clears the counter after a successful sign-in.
 func (l *Lockout) Reset(ctx context.Context, key string) {
 	if err := l.rdb.Del(ctx, "lockout:"+key).Err(); err != nil {

@@ -16,6 +16,7 @@ import (
 
 	"github.com/fatihacan1/warden/internal/apikeys"
 	"github.com/fatihacan1/warden/internal/auth"
+	"github.com/fatihacan1/warden/internal/captcha"
 	"github.com/fatihacan1/warden/internal/config"
 	"github.com/fatihacan1/warden/internal/oauth"
 	"github.com/fatihacan1/warden/internal/oauthclients"
@@ -42,6 +43,8 @@ type Deps struct {
 	Settings *settings.Manager
 	APIKeys  *apikeys.Manager
 	Clients  *oauthclients.Manager
+	// Captcha verifies Turnstile tokens; nil uses Cloudflare's endpoint.
+	Captcha *captcha.Verifier
 }
 
 type Server struct {
@@ -58,6 +61,7 @@ type Server struct {
 	settings *settings.Manager
 	apiKeys  *apikeys.Manager
 	clients  *oauthclients.Manager
+	captcha  *captcha.Verifier
 	gql      *graphql.Schema
 }
 
@@ -68,6 +72,10 @@ func New(d Deps) (*Server, error) {
 	s := &Server{
 		cfg: d.Config, auth: d.Auth, tokens: d.Tokens, keys: d.Keys, oauth: d.OAuth,
 		limiter: d.Limiter, metrics: d.Metrics, log: d.Log, ready: d.Ready, settings: d.Settings, apiKeys: d.APIKeys, clients: d.Clients,
+		captcha: d.Captcha,
+	}
+	if s.captcha == nil {
+		s.captcha = captcha.New(d.Log)
 	}
 	if d.Config.GraphQL.Enabled {
 		if err := s.buildGraphQL(); err != nil {
@@ -115,7 +123,7 @@ func (s *Server) routes() {
 			return slices.Contains(s.settings.Get().CORSOrigins, origin) || slices.Contains(s.apiKeys.Origins(), origin)
 		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Authorization", "Content-Type", "X-Auth-Mode", "X-Request-ID", "X-Warden-Key"},
+		AllowHeaders:     []string{"Authorization", "Content-Type", "X-Auth-Mode", "X-Request-ID", "X-Warden-Key", captcha.HeaderName},
 		ExposeHeaders:    []string{"X-Request-ID", "Retry-After"},
 		AllowCredentials: true,
 		MaxAge:           600,

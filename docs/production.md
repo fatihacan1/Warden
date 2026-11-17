@@ -28,6 +28,10 @@ Just testing on a server, with no domain or SMTP provider? See [test-server.md](
 
 Production sends through an SMTP provider (`SMTP_HOST`, the default mode). `MAIL_DELIVERY=inbox` (emails shown in the admin UI, users receive nothing) and `MAIL_DELIVERY=direct` (sent from the server on port 25, usually spam-filtered) exist for tests. Production never falls back to them: they must be chosen explicitly, and inbox mode shows a warning banner in the admin UI.
 
+## Bot protection (Cloudflare Turnstile)
+
+If you enable Cloudflare Turnstile, set real `AUTH_TURNSTILE_SECRET_KEY`, `AUTH_TURNSTILE_SITE_KEY` and `AUTH_TURNSTILE_HOSTNAMES` (or configure them in admin UI > Settings > **Bot protection (Cloudflare Turnstile)**). Hostnames are required in production, and Cloudflare's test keys are refused when `APP_ENV=production`.
+
 ## Domain and HTTPS
 
 Locally Warden runs on `http://localhost:8080`; that is what the callback URLs in the admin UI show. To go live:

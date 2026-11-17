@@ -89,6 +89,11 @@ var (
 	ErrServerBusy         = newErr("server_busy", http.StatusServiceUnavailable, "The server is busy. Please retry shortly.")
 	ErrServiceUnavailable = newErr("service_unavailable", http.StatusServiceUnavailable, "A dependency is unavailable. Please retry shortly.")
 	ErrInternal           = newErr("internal_error", http.StatusInternalServerError, "An unexpected error occurred.")
+
+	// Bot protection (Cloudflare Turnstile).
+	ErrCaptchaRequired    = newErr("captcha_required", http.StatusBadRequest, "Please complete the bot check.")
+	ErrCaptchaFailed      = newErr("captcha_failed", http.StatusForbidden, "The bot check failed. Please try again.")
+	ErrCaptchaUnavailable = newErr("captcha_unavailable", http.StatusServiceUnavailable, "The bot check is unavailable. Please retry shortly.")
 )
 
 // AsError extracts a *Error from err, or nil when err is not client-safe.

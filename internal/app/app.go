@@ -105,7 +105,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 		return nil, err
 	}
 	a.Store = store.New(a.Pool)
-	a.Settings = settings.NewManager(cfg, a.Store, log)
+	a.Settings = settings.NewManager(cfg, a.Store, box, log)
 	if err := a.Settings.Reload(cctx); err != nil {
 		// Invalid or unreadable admin settings must not take the service down:
 		// keep the environment defaults and surface the problem loudly.

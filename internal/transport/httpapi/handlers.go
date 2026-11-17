@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/fatihacan1/warden/internal/auth"
+	"github.com/fatihacan1/warden/internal/captcha"
 	"github.com/fatihacan1/warden/internal/domain"
 )
 
@@ -30,8 +31,19 @@ func (s *Server) providers(c fiber.Ctx) error {
 		})
 	}
 	rt := s.settings.Get()
+	// Only public values: the site key renders the widget; the secret key
+	// never leaves the server.
+	var bot any
+	if rt.TurnstileEnabled {
+		bot = fiber.Map{
+			"provider": "turnstile", "site_key": rt.TurnstileSiteKey,
+			"signup": rt.TurnstileSignup, "password_forgot": rt.TurnstileForgot, "email_resend": rt.TurnstileResend,
+			"signin": rt.TurnstileSignIn, "signin_after": rt.TurnstileSignInAfter,
+		}
+	}
 	c.Set("Cache-Control", "public, max-age=60")
 	return c.JSON(fiber.Map{
+		"captcha":                     bot,
 		"password":                    true,
 		"signup_enabled":              rt.AllowSignup,
 		"require_work_email":          rt.RequireWorkEmail,
@@ -47,8 +59,12 @@ func (s *Server) signUp(c fiber.Ctx) error {
 		Password string `json:"password"`
 		Name     string `json:"name"`
 		Locale   string `json:"locale"`
+		Captcha  string `json:"turnstile_token"`
 	}
 	if err := decode(c, &in); err != nil {
+		return err
+	}
+	if err := s.requireCaptcha(c, captcha.ActionSignup, in.Captcha); err != nil {
 		return err
 	}
 	res, err := s.auth.SignUp(c.Context(), auth.SignUpInput{Email: in.Email, Password: in.Password, Name: in.Name, Locale: in.Locale}, meta(c))
@@ -62,8 +78,12 @@ func (s *Server) signIn(c fiber.Ctx) error {
 	var in struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
+		Captcha  string `json:"turnstile_token"`
 	}
 	if err := decode(c, &in); err != nil {
+		return err
+	}
+	if err := s.requireSignInCaptcha(c, in.Email, in.Captcha); err != nil {
 		return err
 	}
 	res, err := s.auth.SignIn(c.Context(), in.Email, in.Password, meta(c))
@@ -158,9 +178,13 @@ func (s *Server) verifyEmail(c fiber.Ctx) error {
 
 func (s *Server) forgotPassword(c fiber.Ctx) error {
 	var in struct {
-		Email string `json:"email"`
+		Email   string `json:"email"`
+		Captcha string `json:"turnstile_token"`
 	}
 	if err := decode(c, &in); err != nil {
+		return err
+	}
+	if err := s.requireCaptcha(c, captcha.ActionForgot, in.Captcha); err != nil {
 		return err
 	}
 	if err := s.auth.ForgotPassword(c.Context(), in.Email, meta(c)); err != nil {
@@ -339,6 +363,15 @@ func (s *Server) changePassword(c fiber.Ctx) error {
 }
 
 func (s *Server) resendVerification(c fiber.Ctx) error {
+	var in struct {
+		Captcha string `json:"turnstile_token"`
+	}
+	if err := decode(c, &in); err != nil {
+		return err
+	}
+	if err := s.requireCaptcha(c, captcha.ActionResend, in.Captcha); err != nil {
+		return err
+	}
 	if err := s.auth.ResendVerification(c.Context(), userID(c)); err != nil {
 		return err
 	}

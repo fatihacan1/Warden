@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/fatihacan1/warden/internal/captcha"
 	"github.com/fatihacan1/warden/internal/config"
 	"github.com/fatihacan1/warden/internal/domain"
 	"github.com/fatihacan1/warden/internal/i18n"
@@ -47,6 +48,59 @@ type Runtime struct {
 	// AdminIPAllowlist restricts the admin UI to AdminAllowedIPs.
 	AdminIPAllowlist bool     `json:"admin_ip_allowlist"`
 	AdminAllowedIPs  []string `json:"admin_allowed_ips"`
+
+	// Cloudflare Turnstile bot protection.
+	TurnstileEnabled bool   `json:"turnstile_enabled"`
+	TurnstileSiteKey string `json:"turnstile_site_key"`
+	// TurnstileSecretKey is never serialized with the settings: it is stored
+	// encrypted (see storedRuntime) and never returned by any API. Saving
+	// with an empty value keeps the current secret.
+	TurnstileSecretKey   string   `json:"-"`
+	TurnstileHostnames   []string `json:"turnstile_hostnames"`
+	TurnstileSignup      bool     `json:"turnstile_signup"`
+	TurnstileForgot      bool     `json:"turnstile_password_forgot"`
+	TurnstileResend      bool     `json:"turnstile_email_resend"`
+	TurnstileSignIn      string   `json:"turnstile_signin"`
+	TurnstileSignInAfter int      `json:"turnstile_signin_after"`
+}
+
+// Turnstile returns the bot protection part of the settings.
+func (r *Runtime) Turnstile() captcha.Settings {
+	return captcha.Settings{
+		Enabled: r.TurnstileEnabled, SecretKey: r.TurnstileSecretKey, SiteKey: r.TurnstileSiteKey,
+		Hostnames: r.TurnstileHostnames, SignInMode: r.TurnstileSignIn, SignInAfter: r.TurnstileSignInAfter,
+	}
+}
+
+// TurnstileSecretHint shows the last characters of the secret so admins can
+// tell which key is configured without revealing it.
+func (r *Runtime) TurnstileSecretHint() string {
+	k := r.TurnstileSecretKey
+	switch {
+	case k == "":
+		return ""
+	case captcha.IsTestSecret(k):
+		return "Cloudflare test key"
+	case len(k) <= 12:
+		return "set"
+	}
+	return "\u2026" + k[len(k)-4:]
+}
+
+// storedRuntime is the database form: the Turnstile secret is sealed with
+// ENCRYPTION_KEY under SecretLabel.
+type storedRuntime struct {
+	Runtime
+	TurnstileSecretEnc []byte `json:"turnstile_secret_enc,omitempty"`
+}
+
+// SecretLabel binds the sealed Turnstile secret to its purpose.
+const SecretLabel = "settings:turnstile_secret"
+
+// Sealer encrypts secrets at rest (secretbox.Box).
+type Sealer interface {
+	Seal(plaintext []byte, label string) ([]byte, error)
+	Open(ciphertext []byte, label string) ([]byte, error)
 }
 
 // Store persists the admin overrides.
@@ -68,6 +122,7 @@ type Manager struct {
 	env        Runtime
 	production bool
 	store      Store
+	box        Sealer
 	log        *slog.Logger
 	st         atomic.Pointer[state]
 }
@@ -94,11 +149,22 @@ func FromConfig(c *config.Config) Runtime {
 		NotifyAccountLocked:      c.Auth.NotifyAccountLocked,
 		AdminIPAllowlist:         len(c.Admin.AllowedIPs) > 0,
 		AdminAllowedIPs:          slices.Clone(c.Admin.AllowedIPs),
+		TurnstileEnabled:         c.Auth.TurnstileSecretKey != "",
+		TurnstileSiteKey:         c.Auth.TurnstileSiteKey,
+		TurnstileSecretKey:       c.Auth.TurnstileSecretKey,
+		TurnstileHostnames:       captcha.NormalizeHostnames(c.Auth.TurnstileHostnames),
+		TurnstileSignup:          c.Auth.TurnstileSignup,
+		TurnstileForgot:          c.Auth.TurnstileForgot,
+		TurnstileResend:          c.Auth.TurnstileResend,
+		TurnstileSignIn:          c.Auth.TurnstileSignIn,
+		TurnstileSignInAfter:     c.Auth.TurnstileSignInAfter,
 	}
 }
 
-func NewManager(c *config.Config, st Store, log *slog.Logger) *Manager {
-	m := &Manager{env: FromConfig(c), production: c.IsProduction(), store: st, log: log}
+// NewManager serves the settings. box encrypts the Turnstile secret saved
+// from the admin UI; without it such a secret cannot be saved or loaded.
+func NewManager(c *config.Config, st Store, box Sealer, log *slog.Logger) *Manager {
+	m := &Manager{env: FromConfig(c), production: c.IsProduction(), store: st, box: box, log: log}
 	env := m.env
 	m.st.Store(&state{current: &env})
 	return m
@@ -137,21 +203,33 @@ func (m *Manager) Reload(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	r := m.env // fields missing from older saved JSON keep env values
+	sr := storedRuntime{Runtime: m.env} // fields missing from older saved JSON keep env values
+	r := &sr.Runtime
 	// Unmarshal can reuse slice storage, so keep environment defaults isolated.
 	r.WorkEmailExtraBlocked = slices.Clone(m.env.WorkEmailExtraBlocked)
 	r.WorkEmailAllowed = slices.Clone(m.env.WorkEmailAllowed)
 	r.AllowedRedirectURIs = slices.Clone(m.env.AllowedRedirectURIs)
 	r.CORSOrigins = slices.Clone(m.env.CORSOrigins)
 	r.AdminAllowedIPs = slices.Clone(m.env.AdminAllowedIPs)
-	if err := json.Unmarshal(data, &r); err != nil {
+	r.TurnstileHostnames = slices.Clone(m.env.TurnstileHostnames)
+	if err := json.Unmarshal(data, &sr); err != nil {
 		return fmt.Errorf("settings: decode: %w", err)
+	}
+	if len(sr.TurnstileSecretEnc) > 0 {
+		if m.box == nil {
+			return errors.New("settings: cannot decrypt the Turnstile secret without ENCRYPTION_KEY")
+		}
+		pt, err := m.box.Open(sr.TurnstileSecretEnc, SecretLabel)
+		if err != nil {
+			return fmt.Errorf("settings: decrypt Turnstile secret: %w", err)
+		}
+		r.TurnstileSecretKey = string(pt)
 	}
 	if err := r.Validate(m.production); err != nil {
 		// Never apply invalid settings; keep serving the previous ones.
 		return fmt.Errorf("settings: stored settings are invalid: %w", err)
 	}
-	m.st.Store(&state{current: &r, overridden: true, updatedAt: at})
+	m.st.Store(&state{current: r, overridden: true, updatedAt: at})
 	return nil
 }
 
@@ -172,12 +250,46 @@ func (m *Manager) Run(ctx context.Context, every time.Duration) {
 }
 
 // Save validates and stores new settings, then applies them immediately.
+//
+// An empty TurnstileSecretKey keeps the secret currently in effect (no API
+// returns it, so callers cannot echo it back). SaveClearingTurnstileSecret
+// removes it.
 func (m *Manager) Save(ctx context.Context, r Runtime) error {
+	return m.save(ctx, r, false)
+}
+
+// SaveClearingTurnstileSecret saves r and removes the Turnstile secret saved
+// in the database; AUTH_TURNSTILE_SECRET_KEY, if set, applies again.
+func (m *Manager) SaveClearingTurnstileSecret(ctx context.Context, r Runtime) error {
+	return m.save(ctx, r, true)
+}
+
+func (m *Manager) save(ctx context.Context, r Runtime, clearSecret bool) error {
 	r.normalize()
+	switch {
+	case clearSecret:
+		// Without a saved secret the environment value applies again.
+		r.TurnstileSecretKey = m.env.TurnstileSecretKey
+	case r.TurnstileSecretKey == "":
+		r.TurnstileSecretKey = m.Get().TurnstileSecretKey
+	}
 	if err := r.Validate(m.production); err != nil {
 		return err
 	}
-	data, err := json.Marshal(r)
+	sr := storedRuntime{Runtime: r}
+	// Only a secret that differs from the environment is stored, so a later
+	// change of AUTH_TURNSTILE_SECRET_KEY still applies.
+	if r.TurnstileSecretKey != "" && r.TurnstileSecretKey != m.env.TurnstileSecretKey {
+		if m.box == nil {
+			return errors.New("an encryption key is required to store the Turnstile secret")
+		}
+		enc, err := m.box.Seal([]byte(r.TurnstileSecretKey), SecretLabel)
+		if err != nil {
+			return err
+		}
+		sr.TurnstileSecretEnc = enc
+	}
+	data, err := json.Marshal(sr)
 	if err != nil {
 		return err
 	}
@@ -209,6 +321,10 @@ func (r *Runtime) normalize() {
 	r.WorkEmailAllowed = cleanList(r.WorkEmailAllowed)
 	r.AdminAllowedIPs = cleanList(r.AdminAllowedIPs)
 	r.DefaultLocale = strings.ToLower(strings.TrimSpace(r.DefaultLocale))
+	r.TurnstileSiteKey = strings.TrimSpace(r.TurnstileSiteKey)
+	r.TurnstileSecretKey = strings.TrimSpace(r.TurnstileSecretKey)
+	r.TurnstileHostnames = captcha.NormalizeHostnames(r.TurnstileHostnames)
+	r.TurnstileSignIn = strings.ToLower(strings.TrimSpace(r.TurnstileSignIn))
 }
 
 func cleanList(in []string) []string {
@@ -276,5 +392,6 @@ func (r *Runtime) Validate(production bool) error {
 	if r.AdminIPAllowlist && len(r.AdminAllowedIPs) == 0 {
 		add("Add at least one IP before turning on the admin IP allowlist.")
 	}
+	errs = append(errs, r.Turnstile().Validate(production, false)...)
 	return errors.Join(errs...)
 }

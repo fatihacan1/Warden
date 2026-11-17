@@ -37,7 +37,7 @@ func testConfig() *config.Config {
 
 func TestOverrideAndReset(t *testing.T) {
 	st := &memStore{}
-	m := NewManager(testConfig(), st, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	m := NewManager(testConfig(), st, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx := context.Background()
 	if err := m.Reload(ctx); err != nil {
 		t.Fatal(err)
@@ -69,7 +69,7 @@ func TestOverrideAndReset(t *testing.T) {
 }
 
 func TestRejectsUnsafeSettings(t *testing.T) {
-	m := NewManager(testConfig(), &memStore{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	m := NewManager(testConfig(), &memStore{}, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	base := *m.Get()
 	cases := map[string]func(r *Runtime){
 		"short passwords":   func(r *Runtime) { r.PasswordMinLength = 4 },
@@ -113,7 +113,7 @@ func TestWorkEmailOverrideAndReset(t *testing.T) {
 	c.Auth.WorkEmailExtraBlocked = []string{"blocked.example"}
 	c.Auth.WorkEmailAllowed = []string{"gmail.com"}
 	st := &memStore{}
-	m := NewManager(c, st, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	m := NewManager(c, st, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx := context.Background()
 	// Older saved settings inherit new fields from the environment.
 	st.data = []byte(`{"allow_signup":false}`)

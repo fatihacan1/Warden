@@ -64,6 +64,8 @@ Rules:
   shared network, or clients can spoof their IP and dodge rate limits.
 - Keep `ENCRYPTION_KEY` backed up. Rotate with `ENCRYPTION_PREVIOUS_KEYS` and
   `warden reencrypt`; never just replace it.
+- Verify Cloudflare Turnstile server-side only; never put
+  `AUTH_TURNSTILE_SECRET_KEY` in frontend code or config.
 - Remote databases need `sslmode=require`.
 - On Kubernetes, keep the NetworkPolicies. Pods that need the admin port or
   gRPC get the labels described in docs/kubernetes.md.

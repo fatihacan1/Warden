@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/fatihacan1/warden/internal/captcha"
 	"github.com/fatihacan1/warden/internal/crypto/password"
 	"github.com/fatihacan1/warden/internal/crypto/randtoken"
 	"github.com/fatihacan1/warden/internal/domain"
@@ -99,6 +100,7 @@ func (s *Service) SignIn(ctx context.Context, rawEmail, pw string, meta domain.R
 			return nil, domain.ErrServerBusy.WithRetryAfter(2 * time.Second)
 		}
 		s.Lockout.Fail(ctx, lk)
+		s.noteIPFailure(ctx, meta)
 		s.metric("sign_in", "invalid")
 		s.audit(ctx, uuid.Nil, "user.sign_in_failed", meta, map[string]any{"reason": "unknown_account"})
 		return nil, domain.ErrInvalidCredentials
@@ -113,6 +115,7 @@ func (s *Service) SignIn(ctx context.Context, rawEmail, pw string, meta domain.R
 	}
 	if !match {
 		n := s.Lockout.Fail(ctx, lk)
+		s.noteIPFailure(ctx, meta)
 		s.noticeLocked(ctx, u, n, meta)
 		s.metric("sign_in", "invalid")
 		s.audit(ctx, u.ID, "user.sign_in_failed", meta, map[string]any{"reason": "bad_password", "failures": n})
@@ -286,4 +289,36 @@ func (s *Service) RevokeAllSessions(ctx context.Context, userID, keep uuid.UUID,
 		s.audit(ctx, userID, "session.revoked_all", meta, map[string]any{"count": len(ids), "reason": reason})
 	}
 	return len(ids), nil
+}
+
+// noteIPFailure counts failed password sign-ins per client IP, so the
+// "Turnstile after failed attempts" mode also catches one client guessing
+// across many accounts. Only counted while that mode is active.
+func (s *Service) noteIPFailure(ctx context.Context, meta domain.RequestMeta) {
+	rt := s.Settings.Get()
+	if !rt.TurnstileEnabled || rt.TurnstileSignIn != captcha.SignInAfterFailures || meta.IP == "" {
+		return
+	}
+	s.Lockout.Fail(ctx, lockoutKey("captcha-ip", meta.IP))
+}
+
+// SignInFailures returns the larger of the failed sign-in counts for the
+// account and for the client IP in the current lockout window.
+func (s *Service) SignInFailures(ctx context.Context, rawEmail string, meta domain.RequestMeta) (int, error) {
+	n := 0
+	if email, ok := normalizeEmail(rawEmail); ok {
+		c, err := s.Lockout.Count(ctx, lockoutKey("pwd", email))
+		if err != nil {
+			return 0, err
+		}
+		n = c
+	}
+	if meta.IP != "" {
+		c, err := s.Lockout.Count(ctx, lockoutKey("captcha-ip", meta.IP))
+		if err != nil {
+			return 0, err
+		}
+		n = max(n, c)
+	}
+	return n, nil
 }

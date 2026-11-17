@@ -282,11 +282,21 @@ Every option is documented in [.env.example](.env.example). The most important o
 | `S3_*`, `RABBITMQ_URL`, `SMTP_*` | Optional: avatars, events, real email delivery |
 | `MAIL_DELIVERY` | `smtp` (production), `inbox` (no SMTP: emails show in the admin UI Inbox), `direct` (send to the recipient MX on port 25, often blocked or spam), `log`. Test with `warden mail-test <address>` |
 | `AUTH_REQUIRE_WORK_EMAIL`, `AUTH_WORK_EMAIL_EXTRA_BLOCKED`, `AUTH_WORK_EMAIL_ALLOWED` | Require work email for new accounts; comma-separated blocked domains and allowed exceptions (also editable in Settings) |
+| `AUTH_TURNSTILE_SECRET_KEY`, `AUTH_TURNSTILE_SITE_KEY`, `AUTH_TURNSTILE_HOSTNAMES` | Enable Cloudflare Turnstile bot protection; optional `AUTH_TURNSTILE_SIGNUP`, `AUTH_TURNSTILE_PASSWORD_FORGOT`, `AUTH_TURNSTILE_EMAIL_RESEND`, `AUTH_TURNSTILE_SIGNIN` (`off` \| `after_failures` \| `always`), `AUTH_TURNSTILE_SIGNIN_AFTER` (also editable in Settings) |
 | `AUTH_ALLOWED_REDIRECT_URIS`, `HTTP_CORS_ALLOWED_ORIGINS` | Where your apps live (also editable in the admin UI) |
 | `TOKEN_ACCESS_TTL`, `TOKEN_REFRESH_TTL`, `TOKEN_SESSION_MAX_AGE` | Token and session lifetimes |
 | `HTTP_TRUSTED_PROXIES` | Your load balancer ranges, so client IPs (and rate limits) are correct |
 
 Configuration is validated at startup. Unsafe combinations are rejected with a clear message instead of starting in an insecure state, for example zero TTLs, wildcard CORS with credentials, plain HTTP or non-secure cookies in production, and development secrets in production.
+
+### Bot protection (Cloudflare Turnstile)
+
+Setting `AUTH_TURNSTILE_SECRET_KEY` (or saving it in admin UI > Settings > **Bot protection (Cloudflare Turnstile)**) enables Cloudflare Turnstile. When saved in the admin UI, the secret is encrypted with `ENCRYPTION_KEY` (included in `warden reencrypt`); it cannot be changed with an admin access token (`PATCH /api/v1/settings` on the admin port) and is never returned by any API.
+
+- **Protected endpoints**: `POST /v1/auth/signup` (`signup`), `POST /v1/auth/signin` (`signin`, controlled by `AUTH_TURNSTILE_SIGNIN=off|after_failures|always` and `AUTH_TURNSTILE_SIGNIN_AFTER`, default 3 failures per account and client IP in the lockout window), `POST /v1/auth/password/forgot` (`password_forgot`) and `POST /v1/me/email/resend` (`email_resend`).
+- **Verification**: Clients send the single-use token in the `CF-Turnstile-Response` header or `turnstile_token` body field, with the widget's `data-action` matching the endpoint. Warden verifies `success`, `hostname` (`AUTH_TURNSTILE_HOSTNAMES`) and `action` with Cloudflare and fails closed if Cloudflare is unreachable.
+- **Discovery & errors**: `GET /v1/auth/providers` returns `captcha` (`null` when off). Failures return `captcha_required` (400), `captcha_failed` (403) or `captcha_unavailable` (503).
+- **Local testing**: Cloudflare's test secret `1x0000000000000000000000000000000AA` and site key `1x00000000000000000000AA` always pass (hostname and action checks skipped) and are refused when `APP_ENV=production`.
 
 ## Security model
 

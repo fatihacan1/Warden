@@ -384,8 +384,13 @@ func (s *Server) apiRevokeUserSessions(c fiber.Ctx, t *accesstokens.Token) (any,
 // Settings
 
 // adminOnlySettings can only be changed in the admin UI: a token must never
-// be able to lock admins out or widen its own reach.
-var adminOnlySettings = []string{"admin_ip_allowlist", "admin_allowed_ips"}
+// be able to lock admins out, widen its own reach or weaken bot protection.
+// (The Turnstile secret is not part of the API at all.)
+var adminOnlySettings = []string{
+	"admin_ip_allowlist", "admin_allowed_ips",
+	"turnstile_enabled", "turnstile_site_key", "turnstile_hostnames", "turnstile_signup",
+	"turnstile_password_forgot", "turnstile_email_resend", "turnstile_signin", "turnstile_signin_after",
+}
 
 func (s *Server) apiGetSettings(c fiber.Ctx, _ *accesstokens.Token) (any, error) {
 	over, since := s.Settings.Overridden()

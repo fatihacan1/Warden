@@ -326,16 +326,34 @@ func (s *Server) saveSettings(c fiber.Ctx) error {
 		NotifyAccountLocked:      c.FormValue("notify_account_locked") == "on",
 		AdminIPAllowlist:         c.FormValue("admin_ip_allowlist") == "on",
 		AdminAllowedIPs:          lines(c.FormValue("admin_allowed_ips")),
+		TurnstileEnabled:         c.FormValue("turnstile_enabled") == "on",
+		TurnstileSiteKey:         c.FormValue("turnstile_site_key"),
+		TurnstileSecretKey:       c.FormValue("turnstile_secret_key"),
+		TurnstileHostnames:       lines(c.FormValue("turnstile_hostnames")),
+		TurnstileSignup:          c.FormValue("turnstile_signup") == "on",
+		TurnstileForgot:          c.FormValue("turnstile_password_forgot") == "on",
+		TurnstileResend:          c.FormValue("turnstile_email_resend") == "on",
+		TurnstileSignIn:          c.FormValue("turnstile_signin"),
+		TurnstileSignInAfter:     atoi("turnstile_signin_after"),
 	}
+	clearSecret := c.FormValue("turnstile_secret_clear") == "on" && r.TurnstileSecretKey == ""
+	secretChanged := r.TurnstileSecretKey != "" || clearSecret
 	var addedIP bool
 	r.AdminAllowedIPs, addedIP = withCurrentIP(r.AdminIPAllowlist, r.AdminAllowedIPs, c.IP())
 	if r.RequirePublishableKey && !s.APIKeys.HasPublishable() {
 		return backErr(c, "/admin/settings", domain.ErrValidation.WithMessage("Create a publishable key on the API keys page before requiring one, or every app is locked out."))
 	}
-	if err := s.Settings.Save(c.Context(), r); err != nil {
+	save := s.Settings.Save
+	if clearSecret {
+		save = s.Settings.SaveClearingTurnstileSecret
+	}
+	if err := save(c.Context(), r); err != nil {
 		return backErr(c, "/admin/settings", err)
 	}
 	s.audit(c, "admin.settings_saved", map[string]any{
+		"turnstile_enabled": r.TurnstileEnabled, "turnstile_hostnames": r.TurnstileHostnames, "turnstile_signup": r.TurnstileSignup,
+		"turnstile_password_forgot": r.TurnstileForgot, "turnstile_email_resend": r.TurnstileResend,
+		"turnstile_signin": r.TurnstileSignIn, "turnstile_signin_after": r.TurnstileSignInAfter, "turnstile_secret_changed": secretChanged,
 		"allow_signup": r.AllowSignup, "require_work_email": r.RequireWorkEmail, "work_email_extra_blocked": r.WorkEmailExtraBlocked, "work_email_allowed": r.WorkEmailAllowed, "require_email_verification": r.RequireEmailVerification,
 		"check_breached_passwords": r.CheckBreachedPasswords, "require_publishable_key": r.RequirePublishableKey,
 		"admin_ip_allowlist": r.AdminIPAllowlist, "admin_allowed_ips": r.AdminAllowedIPs, "default_locale": r.DefaultLocale,
