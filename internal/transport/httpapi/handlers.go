@@ -4,6 +4,8 @@ import (
 	"html"
 	"io"
 	"net/url"
+	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
@@ -11,6 +13,7 @@ import (
 	"github.com/fatihacan1/warden/internal/auth"
 	"github.com/fatihacan1/warden/internal/captcha"
 	"github.com/fatihacan1/warden/internal/domain"
+	"github.com/fatihacan1/warden/internal/ratelimit"
 )
 
 // ---------------------------------------------------------------------------
@@ -376,6 +379,31 @@ func (s *Server) resendVerification(c fiber.Ctx) error {
 		return err
 	}
 	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"sent": true})
+}
+
+// resendVerificationTo is the signed-out "send the link again": Turnstile, the
+// per-IP email limit on the route, and at most 3 links an hour per address. The
+// answer is always the same, so it cannot be used to find accounts.
+func (s *Server) resendVerificationTo(c fiber.Ctx) error {
+	var in struct {
+		Email   string `json:"email"`
+		Captcha string `json:"turnstile_token"`
+	}
+	if err := decode(c, &in); err != nil {
+		return err
+	}
+	if err := s.requireCaptcha(c, captcha.ActionResend, in.Captcha); err != nil {
+		return err
+	}
+	addr := strings.ToLower(strings.TrimSpace(in.Email))
+	if d := s.limiter.Allow(c.Context(), ratelimit.Per("email_resend_addr", 3, time.Hour), addr); d.Allowed {
+		if err := s.auth.ResendVerificationTo(c.Context(), addr); err != nil {
+			s.log.Error("resend verification failed", "err", err) // never reveal to the client
+		}
+	}
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{
+		"message": "If an unconfirmed account exists for that email, a new link has been sent.",
+	})
 }
 
 func (s *Server) uploadAvatar(c fiber.Ctx) error {

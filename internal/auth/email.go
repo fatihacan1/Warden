@@ -65,6 +65,24 @@ func (s *Service) ResendVerification(ctx context.Context, userID uuid.UUID) erro
 	return s.Store.InTx(ctx, func(tx *store.Store) error { return s.queueVerificationEmail(ctx, tx, u) })
 }
 
+// ResendVerificationTo mails a new confirmation link to an address that is not
+// confirmed yet, for someone who cannot sign in until it is (sign-in requires a
+// confirmed email). It says nothing about whether the account exists: unknown,
+// confirmed and disabled addresses are silently skipped.
+func (s *Service) ResendVerificationTo(ctx context.Context, rawEmail string) error {
+	u, err := s.FindUserByEmail(ctx, rawEmail)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if u.Disabled() || u.EmailVerified() || u.Email == "" {
+		return nil
+	}
+	return s.Store.InTx(ctx, func(tx *store.Store) error { return s.queueVerificationEmail(ctx, tx, u) })
+}
+
 // VerifyEmail consumes a verification token.
 func (s *Service) VerifyEmail(ctx context.Context, tok string, meta domain.RequestMeta) error {
 	if tok == "" || len(tok) > 128 {

@@ -159,6 +159,7 @@ func (s *Server) routes() {
 	ab.Post("/refresh", refresh, s.refresh)
 	ab.Post("/signout", s.signOut)
 	ab.Post("/email/verify", strict, s.verifyEmail)
+	ab.Post("/email/resend", email, s.resendVerificationTo)
 	ab.Post("/password/forgot", email, s.forgotPassword)
 	ab.Post("/password/reset", strict, s.resetPassword)
 
