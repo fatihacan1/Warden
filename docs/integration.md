@@ -358,6 +358,10 @@ sequenceDiagram
 
 When `AUTH_REQUIRE_WORK_EMAIL=true`, new password and social accounts must use a work email. Free and disposable providers are blocked by an embedded list; add comma-separated domains with `AUTH_WORK_EMAIL_EXTRA_BLOCKED` and exceptions with `AUTH_WORK_EMAIL_ALLOWED`. Domains include subdomains, and allowed entries take precedence. These settings can also be changed in admin Settings. Existing users can still sign in, and administrators can create users. The public `/v1/auth/providers` response exposes `require_work_email` (GraphQL: `providers { requireWorkEmail }`); rejected sign-ups return `work_email_required`.
 
+When `AUTH_EMAIL_POLICY=known`, new password and social accounts must use a large, well-known mailbox provider. `AUTH_EMAIL_ALLOW_COMPANIES=true` also accepts other domains that have an MX record and are not throwaway services; `AUTH_EMAIL_ALLOW_SCHOOLS=true` also accepts education domains. `AUTH_EMAIL_ALLOWED_DOMAINS` and `AUTH_EMAIL_BLOCKED_DOMAINS` (subdomains included, blocked wins) adjust the result. Rejected sign-ups return `email_not_accepted` (422). `/v1/auth/providers` exposes `email_policy`. It cannot be combined with `AUTH_REQUIRE_WORK_EMAIL`.
+
+When `AUTH_HIDE_EXISTING_ACCOUNTS=true` (needs `AUTH_REQUIRE_EMAIL_VERIFICATION=true`), a sign-up for an address that already has an account answers `201` with `verification_required`, exactly like a new one. Nothing about the account changes; its owner gets an email with a link to choose a password, at most three an hour.
+
 ## Setting up identity providers
 
 Open the admin UI, **Sign-in providers**. Each card shows the callback URL to register and a link to the provider's console.

@@ -1,0 +1,7 @@
+Zaten bir hesabınız var
+
+Bu adresle bir {{.AppName}} hesabı açılmak istendi. Adresin zaten bir hesabı olduğu için hiçbir şey değiştirilmedi. İsteyen sizseniz giriş yapın ya da aşağıdaki bağlantıyla yeni bir şifre belirleyin.
+
+{{.Data.Link}}
+
+Bu bağlantı {{.Data.ExpiresIn}} geçerlidir ve tek kullanımlıktır. İsteyen siz değilseniz bu e-postayı yok sayın; hesabınız ve şifreniz değişmez.

@@ -31,6 +31,39 @@
         <div class="field"><label for="work_email_extra_blocked">Extra blocked domains</label><textarea id="work_email_extra_blocked" name="work_email_extra_blocked" spellcheck="false">{{join $s.WorkEmailExtraBlocked "\n"}}</textarea><p class="help">One domain per line or comma separated. Subdomains are included.</p></div>
         <div class="field"><label for="work_email_allowed">Allowed domains</label><textarea id="work_email_allowed" name="work_email_allowed" spellcheck="false">{{join $s.WorkEmailAllowed "\n"}}</textarea><p class="help">Exceptions to blocked domains, including their subdomains.</p></div>
       </div>
+      <div class="field">
+        <label for="email_policy">Who can sign up</label>
+        <select id="email_policy" name="email_policy">
+          <option value="any" {{if ne $s.EmailPolicy "known"}}selected{{end}}>Any email address</option>
+          <option value="known" {{if eq $s.EmailPolicy "known"}}selected{{end}}>Known email providers only</option>
+        </select>
+        <p class="help">Known providers are large mailboxes such as Gmail, Outlook, Yahoo, iCloud and Proton. Throwaway addresses and unknown domains are refused. New accounts only; existing users can still sign in.</p>
+      </div>
+      <div class="toggle-row">
+        <div>
+          <h3>Also let companies in</h3>
+          <p class="help">With known providers only: accept other domains that can receive mail and are not throwaway services.</p>
+        </div>
+        <label class="switch"><input type="checkbox" name="email_allow_companies" {{if $s.EmailAllowCompanies}}checked{{end}} aria-label="Also let companies in"></label>
+      </div>
+      <div class="toggle-row">
+        <div>
+          <h3>Also let schools in</h3>
+          <p class="help">With known providers only: accept education domains such as .edu, .edu.tr, .ac.uk and .k12.tr.</p>
+        </div>
+        <label class="switch"><input type="checkbox" name="email_allow_schools" {{if $s.EmailAllowSchools}}checked{{end}} aria-label="Also let schools in"></label>
+      </div>
+      <div class="provider-grid">
+        <div class="field"><label for="email_allowed_domains">Always accepted domains</label><textarea id="email_allowed_domains" name="email_allowed_domains" spellcheck="false">{{join $s.EmailAllowedDomains "\n"}}</textarea><p class="help">With known providers only. One domain per line or comma separated. Subdomains are included.</p></div>
+        <div class="field"><label for="email_blocked_domains">Never accepted domains</label><textarea id="email_blocked_domains" name="email_blocked_domains" spellcheck="false">{{join $s.EmailBlockedDomains "\n"}}</textarea><p class="help">With known providers only. Wins over everything else. Subdomains are included.</p></div>
+      </div>
+      <div class="toggle-row">
+        <div>
+          <h3>Hide existing accounts</h3>
+          <p class="help">Sign-up gives the same answer whether or not the address already has an account; the owner gets an email instead. Needs email verification.</p>
+        </div>
+        <label class="switch"><input type="checkbox" name="hide_existing_accounts" {{if $s.HideExistingAccounts}}checked{{end}} aria-label="Hide existing accounts"></label>
+      </div>
       <div class="toggle-row">
         <div>
           <h3>Require email verification</h3>

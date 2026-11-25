@@ -1066,6 +1066,7 @@ components:
         password: { type: boolean }
         signup_enabled: { type: boolean }
         require_work_email: { type: boolean }
+        email_policy: { type: string, enum: [any, known] }
         email_verification_required: { type: boolean }
         password_min_length: { type: integer }
         captcha:

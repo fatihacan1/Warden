@@ -139,21 +139,26 @@ func (s *Service) ForgotPassword(ctx context.Context, rawEmail string, meta doma
 	if u.Disabled() {
 		return nil
 	}
+	err = s.sendResetLink(ctx, u, mailer.TemplateResetPassword)
+	if err == nil {
+		s.audit(ctx, u.ID, "user.password_reset_requested", meta, nil)
+	}
+	return err
+}
+
+// sendResetLink mails a single-use link to choose a password, in the given template.
+func (s *Service) sendResetLink(ctx context.Context, u *domain.User, template string) error {
 	tok := randtoken.New(32)
 	rec := emailTokenRecord{UserID: u.ID.String(), Email: u.Email, PasswordFingerprint: passwordFingerprint(u.PasswordHash)}
 	if err := s.putJSON(ctx, "pr:"+randtoken.HashHex(tok), rec, s.cfg.Auth.PasswordResetTTL); err != nil {
 		return err
 	}
-	err = s.Store.InTx(ctx, func(tx *store.Store) error {
-		return s.Events.Email(ctx, tx, u.Email, s.locale(u), mailer.TemplateResetPassword, map[string]string{
+	return s.Store.InTx(ctx, func(tx *store.Store) error {
+		return s.Events.Email(ctx, tx, u.Email, s.locale(u), template, map[string]string{
 			"Link":      link(s.Settings.Get().ResetPasswordURL, tok),
 			"ExpiresIn": i18n.Duration(s.cfg.Auth.PasswordResetTTL, s.locale(u)),
 		})
 	})
-	if err == nil {
-		s.audit(ctx, u.ID, "user.password_reset_requested", meta, nil)
-	}
-	return err
 }
 
 // ResetPassword sets a new password with a reset token and signs out every

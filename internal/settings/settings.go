@@ -26,13 +26,25 @@ import (
 	"github.com/fatihacan1/warden/internal/i18n"
 )
 
+// Values of Runtime.EmailPolicy.
+const (
+	EmailPolicyAny   = "any"
+	EmailPolicyKnown = "known"
+)
+
 // Runtime are the editable settings.
 type Runtime struct {
 	AllowSignup              bool     `json:"allow_signup"`
 	RequireWorkEmail         bool     `json:"require_work_email"`
 	WorkEmailExtraBlocked    []string `json:"work_email_extra_blocked"`
 	WorkEmailAllowed         []string `json:"work_email_allowed"`
+	EmailPolicy              string   `json:"email_policy"`
+	EmailAllowCompanies      bool     `json:"email_allow_companies"`
+	EmailAllowSchools        bool     `json:"email_allow_schools"`
+	EmailAllowedDomains      []string `json:"email_allowed_domains"`
+	EmailBlockedDomains      []string `json:"email_blocked_domains"`
 	RequireEmailVerification bool     `json:"require_email_verification"`
+	HideExistingAccounts     bool     `json:"hide_existing_accounts"`
 	CheckBreachedPasswords   bool     `json:"check_breached_passwords"`
 	PasswordMinLength        int      `json:"password_min_length"`
 	LockoutThreshold         int      `json:"lockout_threshold"`
@@ -134,7 +146,13 @@ func FromConfig(c *config.Config) Runtime {
 		RequireWorkEmail:         c.Auth.RequireWorkEmail,
 		WorkEmailExtraBlocked:    slices.Clone(c.Auth.WorkEmailExtraBlocked),
 		WorkEmailAllowed:         slices.Clone(c.Auth.WorkEmailAllowed),
+		EmailPolicy:              c.Auth.EmailPolicy,
+		EmailAllowCompanies:      c.Auth.EmailAllowCompanies,
+		EmailAllowSchools:        c.Auth.EmailAllowSchools,
+		EmailAllowedDomains:      slices.Clone(c.Auth.EmailAllowedDomains),
+		EmailBlockedDomains:      slices.Clone(c.Auth.EmailBlockedDomains),
 		RequireEmailVerification: c.Auth.RequireEmailVerification,
+		HideExistingAccounts:     c.Auth.HideExistingAccounts,
 		CheckBreachedPasswords:   c.Password.CheckBreached,
 		PasswordMinLength:        c.Password.MinLength,
 		LockoutThreshold:         c.Auth.LockoutThreshold,
@@ -208,6 +226,8 @@ func (m *Manager) Reload(ctx context.Context) error {
 	// Unmarshal can reuse slice storage, so keep environment defaults isolated.
 	r.WorkEmailExtraBlocked = slices.Clone(m.env.WorkEmailExtraBlocked)
 	r.WorkEmailAllowed = slices.Clone(m.env.WorkEmailAllowed)
+	r.EmailAllowedDomains = slices.Clone(m.env.EmailAllowedDomains)
+	r.EmailBlockedDomains = slices.Clone(m.env.EmailBlockedDomains)
 	r.AllowedRedirectURIs = slices.Clone(m.env.AllowedRedirectURIs)
 	r.CORSOrigins = slices.Clone(m.env.CORSOrigins)
 	r.AdminAllowedIPs = slices.Clone(m.env.AdminAllowedIPs)
@@ -319,6 +339,12 @@ func (r *Runtime) normalize() {
 	r.CORSOrigins = cleanList(origins)
 	r.WorkEmailExtraBlocked = cleanList(r.WorkEmailExtraBlocked)
 	r.WorkEmailAllowed = cleanList(r.WorkEmailAllowed)
+	r.EmailPolicy = strings.ToLower(strings.TrimSpace(r.EmailPolicy))
+	if r.EmailPolicy == "" {
+		r.EmailPolicy = EmailPolicyAny
+	}
+	r.EmailAllowedDomains = cleanList(r.EmailAllowedDomains)
+	r.EmailBlockedDomains = cleanList(r.EmailBlockedDomains)
 	r.AdminAllowedIPs = cleanList(r.AdminAllowedIPs)
 	r.DefaultLocale = strings.ToLower(strings.TrimSpace(r.DefaultLocale))
 	r.TurnstileSiteKey = strings.TrimSpace(r.TurnstileSiteKey)
@@ -346,6 +372,21 @@ func (r *Runtime) Validate(production bool) error {
 	}
 	if r.LockoutThreshold < 3 || r.LockoutThreshold > 100 {
 		add("Lockout threshold must be between 3 and 100 failed attempts.")
+	}
+	switch r.EmailPolicy {
+	case "", EmailPolicyAny:
+	case EmailPolicyKnown:
+		if r.RequireWorkEmail {
+			add("Choose either \"Known email providers only\" or \"Require work email\": together nobody could sign up.")
+		}
+	default:
+		add("Email policy must be any or known.")
+	}
+	if len(r.EmailAllowedDomains) > 500 || len(r.EmailBlockedDomains) > 500 {
+		add("At most 500 allowed and 500 blocked email domains.")
+	}
+	if r.HideExistingAccounts && !r.RequireEmailVerification {
+		add("Hiding existing accounts needs email verification: without it sign-up signs people in and gives the answer away.")
 	}
 	if r.AppName == "" || len(r.AppName) > 60 {
 		add("App name must be 1 to 60 characters.")

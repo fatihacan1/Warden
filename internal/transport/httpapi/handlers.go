@@ -50,6 +50,7 @@ func (s *Server) providers(c fiber.Ctx) error {
 		"password":                    true,
 		"signup_enabled":              rt.AllowSignup,
 		"require_work_email":          rt.RequireWorkEmail,
+		"email_policy":                rt.EmailPolicy,
 		"email_verification_required": rt.RequireEmailVerification,
 		"password_min_length":         rt.PasswordMinLength,
 		"providers":                   out,

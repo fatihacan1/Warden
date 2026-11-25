@@ -283,6 +283,8 @@ Every option is documented in [.env.example](.env.example). The most important o
 | `MAIL_DELIVERY` | `smtp` (production), `inbox` (no SMTP: emails show in the admin UI Inbox), `direct` (send to the recipient MX on port 25, often blocked or spam), `log`. Test with `warden mail-test <address>` |
 | `AUTH_REQUIRE_WORK_EMAIL`, `AUTH_WORK_EMAIL_EXTRA_BLOCKED`, `AUTH_WORK_EMAIL_ALLOWED` | Require work email for new accounts; comma-separated blocked domains and allowed exceptions (also editable in Settings) |
 | `AUTH_TURNSTILE_SECRET_KEY`, `AUTH_TURNSTILE_SITE_KEY`, `AUTH_TURNSTILE_HOSTNAMES` | Enable Cloudflare Turnstile bot protection; optional `AUTH_TURNSTILE_SIGNUP`, `AUTH_TURNSTILE_PASSWORD_FORGOT`, `AUTH_TURNSTILE_EMAIL_RESEND`, `AUTH_TURNSTILE_SIGNIN` (`off` \| `after_failures` \| `always`), `AUTH_TURNSTILE_SIGNIN_AFTER` (also editable in Settings) |
+| `AUTH_EMAIL_POLICY`, `AUTH_EMAIL_ALLOW_COMPANIES`, `AUTH_EMAIL_ALLOW_SCHOOLS`, `AUTH_EMAIL_ALLOWED_DOMAINS`, `AUTH_EMAIL_BLOCKED_DOMAINS` | `known` accepts only large mailbox providers for new accounts, optionally companies and schools, never throwaway addresses (also editable in Settings) |
+| `AUTH_HIDE_EXISTING_ACCOUNTS` | Sign-up gives the same answer for an address that already has an account; the owner gets an email. Needs email verification (also editable in Settings) |
 | `AUTH_ALLOWED_REDIRECT_URIS`, `HTTP_CORS_ALLOWED_ORIGINS` | Where your apps live (also editable in the admin UI) |
 | `TOKEN_ACCESS_TTL`, `TOKEN_REFRESH_TTL`, `TOKEN_SESSION_MAX_AGE` | Token and session lifetimes |
 | `HTTP_TRUSTED_PROXIES` | Your load balancer ranges, so client IPs (and rate limits) are correct |

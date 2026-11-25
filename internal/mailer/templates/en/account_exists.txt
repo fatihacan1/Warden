@@ -1,0 +1,7 @@
+You already have an account
+
+Someone tried to open a {{.AppName}} account with this address. It already has one, so nothing was changed. If it was you, sign in, or choose a new password with the link below.
+
+{{.Data.Link}}
+
+This link expires in {{.Data.ExpiresIn}} and can be used once. If it was not you, ignore this email: your account and password stay the same.

@@ -12,6 +12,7 @@ import (
 	"github.com/fatihacan1/warden/internal/crypto/randtoken"
 	"github.com/fatihacan1/warden/internal/domain"
 	"github.com/fatihacan1/warden/internal/events"
+	"github.com/fatihacan1/warden/internal/mailer"
 	"github.com/fatihacan1/warden/internal/store"
 )
 
@@ -34,7 +35,7 @@ func (s *Service) SignUp(ctx context.Context, in SignUpInput, meta domain.Reques
 	if !ok {
 		return nil, domain.ErrValidation.WithFields(map[string]string{"email": "Enter a valid email address."})
 	}
-	if err := s.checkWorkEmail(email); err != nil {
+	if err := s.checkNewEmail(ctx, email); err != nil {
 		return nil, err
 	}
 	if err := s.checkNewPassword(ctx, in.Password, email); err != nil {
@@ -67,12 +68,38 @@ func (s *Service) SignUp(ctx context.Context, in SignUpInput, meta domain.Reques
 	if err != nil {
 		if errors.Is(err, domain.ErrEmailTaken) {
 			s.metric("sign_up", "email_taken")
+			if rt := s.Settings.Get(); rt.HideExistingAccounts && rt.RequireEmailVerification {
+				return s.signUpExisting(ctx, u, meta)
+			}
 		}
 		return nil, err
 	}
 	s.metric("sign_up", "success")
 	s.audit(ctx, u.ID, "user.sign_up", meta, map[string]any{"method": "password"})
 	return &Result{User: u, Tokens: pair, NewUser: true, VerificationRequired: pair == nil}, nil
+}
+
+// signUpExisting answers a sign-up for an address that already has an account
+// exactly like a fresh one. What differs goes to the inbox, where only the owner
+// sees it: a notice with a link to choose a password. Nothing about the account
+// changes. The same notice is sent whether or not the address was ever confirmed;
+// a confirmation link here would let whoever registered the address first keep
+// their password on it.
+func (s *Service) signUpExisting(ctx context.Context, shown *domain.User, meta domain.RequestMeta) (*Result, error) {
+	owner, err := s.Store.GetUserByEmail(ctx, shown.Email)
+	if err != nil && !errors.Is(err, domain.ErrNotFound) {
+		return nil, err
+	}
+	if err == nil {
+		s.audit(ctx, owner.ID, "user.sign_up_existing", meta, nil)
+		if !owner.Disabled() && s.allowNotice(ctx, "exists:"+owner.ID.String(), existsMailsPerHour, time.Hour) {
+			if err := s.sendResetLink(ctx, owner, mailer.TemplateAccountExists); err != nil {
+				return nil, err
+			}
+		}
+	}
+	shown.CreatedAt = time.Now().UTC().Truncate(time.Microsecond)
+	return &Result{User: shown, NewUser: true, VerificationRequired: true}, nil
 }
 
 // SignIn authenticates with email + password.

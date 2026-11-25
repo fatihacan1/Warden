@@ -186,7 +186,13 @@ type AuthConfig struct {
 	RequireWorkEmail         bool          `env:"REQUIRE_WORK_EMAIL" envDefault:"false"`
 	WorkEmailExtraBlocked    []string      `env:"WORK_EMAIL_EXTRA_BLOCKED" envSeparator:","`
 	WorkEmailAllowed         []string      `env:"WORK_EMAIL_ALLOWED" envSeparator:","`
+	EmailPolicy              string        `env:"EMAIL_POLICY" envDefault:"any"`
+	EmailAllowCompanies      bool          `env:"EMAIL_ALLOW_COMPANIES" envDefault:"false"`
+	EmailAllowSchools        bool          `env:"EMAIL_ALLOW_SCHOOLS" envDefault:"false"`
+	EmailAllowedDomains      []string      `env:"EMAIL_ALLOWED_DOMAINS" envSeparator:","`
+	EmailBlockedDomains      []string      `env:"EMAIL_BLOCKED_DOMAINS" envSeparator:","`
 	RequireEmailVerification bool          `env:"REQUIRE_EMAIL_VERIFICATION" envDefault:"false"`
+	HideExistingAccounts     bool          `env:"HIDE_EXISTING_ACCOUNTS" envDefault:"false"`
 	EmailVerificationTTL     time.Duration `env:"EMAIL_VERIFICATION_TTL" envDefault:"24h"`
 	PasswordResetTTL         time.Duration `env:"PASSWORD_RESET_TTL" envDefault:"30m"`
 	// URL templates used in emails. {token} is replaced with the token.
@@ -425,6 +431,19 @@ func DecodeKey(v string) ([]byte, bool) {
 func (c *Config) Validate() error {
 	var errs []error
 	add := func(format string, args ...any) { errs = append(errs, fmt.Errorf(format, args...)) }
+
+	switch c.Auth.EmailPolicy {
+	case "any":
+	case "known":
+		if c.Auth.RequireWorkEmail {
+			add("AUTH_EMAIL_POLICY=known and AUTH_REQUIRE_WORK_EMAIL contradict each other; use one")
+		}
+	default:
+		add("AUTH_EMAIL_POLICY must be any or known, got %q", c.Auth.EmailPolicy)
+	}
+	if c.Auth.HideExistingAccounts && !c.Auth.RequireEmailVerification {
+		add("AUTH_HIDE_EXISTING_ACCOUNTS needs AUTH_REQUIRE_EMAIL_VERIFICATION=true, otherwise sign-up signs people in and gives the answer away")
+	}
 
 	switch c.Env {
 	case "development", "production", "test":

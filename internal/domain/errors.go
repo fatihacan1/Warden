@@ -66,6 +66,7 @@ var (
 	ErrEmailNotVerified   = newErr("email_not_verified", http.StatusForbidden, "Please verify your email address first.")
 	ErrReauthRequired     = newErr("reauthentication_required", http.StatusForbidden, "Please sign in again to continue.")
 	ErrWorkEmailRequired  = newErr("work_email_required", http.StatusUnprocessableEntity, "Please use a work email address.")
+	ErrEmailNotAccepted   = newErr("email_not_accepted", http.StatusUnprocessableEntity, "This email address cannot be used here.")
 	ErrSignupDisabled     = newErr("signup_disabled", http.StatusForbidden, "Sign-ups are currently disabled.")
 	ErrPublishableKey     = newErr("invalid_publishable_key", http.StatusUnauthorized, "A valid publishable key (X-Warden-Key) is required.")
 	ErrOriginNotAllowed   = newErr("origin_not_allowed", http.StatusForbidden, "This publishable key cannot be used from this origin.")

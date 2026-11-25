@@ -32,6 +32,7 @@ import (
 const (
 	deviceRetention        = 180 * 24 * time.Hour
 	newDeviceMailsPerHour  = 3
+	existsMailsPerHour     = 3
 	endSessionLinkLifetime = 7 * 24 * time.Hour
 )
 

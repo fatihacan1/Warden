@@ -45,6 +45,7 @@ const (
 	TemplateMFAChanged      = "mfa_changed"
 	TemplateNewDevice       = "new_device"
 	TemplateAccountLocked   = "account_locked"
+	TemplateAccountExists   = "account_exists"
 	// LayoutName is the shared HTML frame. It must define "layout_start" and
 	// "layout_end"; templates call them with {{template "layout_start" .}}.
 	LayoutName = "layout"
@@ -68,6 +69,9 @@ var Templates = []Info{
 		map[string]string{"Link": "https://app.example.com/verify-email?token=sample-token", "ExpiresIn": "24 hours"}},
 	{TemplateResetPassword, "Reset password", "Sent when a user asks to reset a forgotten password.",
 		map[string]string{"Link": "One-time reset link", "ExpiresIn": "How long the link works, e.g. 30 minutes"},
+		map[string]string{"Link": "https://app.example.com/reset-password?token=sample-token", "ExpiresIn": "30 minutes"}},
+	{TemplateAccountExists, "Account exists", "Sent instead of an error when someone signs up with an address that already has an account, while existing accounts are hidden.",
+		map[string]string{"Link": "One-time link to choose a password", "ExpiresIn": "How long the link works, e.g. 30 minutes"},
 		map[string]string{"Link": "https://app.example.com/reset-password?token=sample-token", "ExpiresIn": "30 minutes"}},
 	{TemplatePasswordChanged, "Password changed", "Security notice after a password change or reset.",
 		map[string]string{"When": "Date and time of the change (UTC)"},
@@ -104,6 +108,7 @@ var defaultSubjects = map[string]map[string]string{
 		TemplateMFAChanged:      "{{.AppName}}: Your two-factor authentication settings changed",
 		TemplateNewDevice:       "{{.AppName}}: New sign-in from {{.Data.Device}}",
 		TemplateAccountLocked:   "{{.AppName}}: Sign-in paused after failed attempts",
+		TemplateAccountExists:   "{{.AppName}}: You already have an account",
 	},
 	"tr": {
 		TemplateVerifyEmail:     "{{.AppName}}: E-posta adresinizi doğrulayın",
@@ -112,6 +117,7 @@ var defaultSubjects = map[string]map[string]string{
 		TemplateMFAChanged:      "{{.AppName}}: İki adımlı doğrulama ayarlarınız değişti",
 		TemplateNewDevice:       "{{.AppName}}: {{.Data.Device}} cihazından yeni giriş",
 		TemplateAccountLocked:   "{{.AppName}}: Başarısız denemeler nedeniyle giriş durduruldu",
+		TemplateAccountExists:   "{{.AppName}}: Zaten bir hesabınız var",
 	},
 }
 
